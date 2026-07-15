@@ -8,11 +8,14 @@ import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.item import Item
+from app.models.user import User
 from app.schemas.item import ItemResponse, UrlInput
+from app.schemas.user import UserCreate, UserResponse
 from poc.extractor import extract_product_data
 
 router = APIRouter()
@@ -82,3 +85,27 @@ async def get_item(
             detail=f"Item {item_id} not found",
         )
     return item
+
+
+@router.post(
+    "/users",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def register_user(
+    user_in: UserCreate,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Register a new user."""
+    new_user = User(**user_in.model_dump())
+    db.add(new_user)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El email o nombre de usuario ya está registrado",
+        )
+    await db.refresh(new_user)
+    return new_user

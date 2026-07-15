@@ -7,8 +7,8 @@ from __future__ import annotations
 import uuid as _uuid
 from typing import Optional
 
-from sqlalchemy import ARRAY, DateTime, Numeric, String, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import ARRAY, DateTime, ForeignKey, Numeric, String, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
@@ -19,6 +19,10 @@ class Item(Base):
     id: Mapped[_uuid.UUID] = mapped_column(
         primary_key=True,
         server_default=text("gen_random_uuid()"),
+    )
+    user_id: Mapped[_uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
     )
     original_url: Mapped[str]
     domain_source: Mapped[Optional[str]]
@@ -34,3 +38,5 @@ class Item(Base):
         DateTime(timezone=True),
         server_default=text("now()"),
     )
+
+    owner: Mapped["User"] = relationship(back_populates="items")
