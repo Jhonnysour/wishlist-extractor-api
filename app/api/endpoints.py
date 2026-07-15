@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.security import get_current_user
 from app.models.item import Item
 from app.models.user import User
 from app.schemas.item import ItemResponse, UrlInput
@@ -58,9 +59,10 @@ async def create_item(
     body: UrlInput,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Item:
     """Submit a product URL for extraction."""
-    item = Item(original_url=body.url, status="PENDING")
+    item = Item(original_url=body.url, user_id=current_user.id, status="PENDING")
     db.add(item)
     await db.commit()
     await db.refresh(item)
@@ -75,6 +77,7 @@ async def create_item(
 async def get_item(
     item_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Item:
     """Query the status and result of an extraction task."""
     stmt = select(Item).where(Item.id == item_id)
