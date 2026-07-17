@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
@@ -53,6 +55,19 @@ app = FastAPI(
     title="Wishlist Extractor API",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# CORS so the Flutter app (esp. Flutter Web) can call the API from a browser.
+# This API is token-based (Authorization: Bearer), not cookie-based, so it needs
+# no credentialed CORS — which lets us allow any origin in dev. Restrict in prod
+# by setting CORS_ORIGINS to a comma-separated list of allowed origins.
+cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 from app.api.endpoints import router  # noqa: E402

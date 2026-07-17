@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-07-17 — CORS habilitado (desbloquea el frontend Flutter, incl. Web)
+- **Que se hizo:** Se agrego `CORSMiddleware` en main.py para que la app Flutter (sobre todo Flutter Web en un navegador) pueda llamar la API.
+  - La API es **token-based** (`Authorization: Bearer`), NO usa cookies -> no necesita CORS con credenciales, asi que en dev se permite cualquier origen. `allow_origins` sale de la env `CORS_ORIGINS` (default `*`; en produccion se setea una lista separada por comas). `allow_credentials=False`, `allow_methods=["*"]`, `allow_headers=["*"]`.
+  - **Verificado:** preflight `OPTIONS /api/v1/items` -> 200 con `access-control-allow-origin: *`, metodos (incl. PATCH/DELETE) y `authorization` en allow-headers; GET con `Origin` devuelve el header CORS; `/docs` sigue 200.
+  - Contexto: se detecto la falta de CORS al preparar el handoff del frontend (el backend ya estaba listo salvo esto). Diferido aparte: Fase 2 (Supabase Auth), Capa 0 (Amazon), cola real/Alembic.
+- **Archivos:** main.py (modificado)
+
+---
+
 ## 2026-07-17 — Fix: uvicorn --reload rompia el arranque (NotImplementedError de Playwright)
 - **Que se hizo:** `uvicorn main:app --reload` fallaba al arrancar con `NotImplementedError` en `create_subprocess_exec` (mismo sintoma que el viejo problema de Python 3.14, pero por otra causa).
   - **Causa raiz (confirmada en el codigo de uvicorn, no adivinada):** `uvicorn/loops/asyncio.py` usa `ProactorEventLoop` en Windows **solo si `use_subprocess` es False**; `--reload` (y `--workers>1`) ponen `use_subprocess=True`, forzando el `SelectorEventLoop`, que en Windows **no puede lanzar subprocesos**. Playwright necesita spawnear el driver del navegador -> revienta. Sin `--reload`, uvicorn usa Proactor y funciona.
