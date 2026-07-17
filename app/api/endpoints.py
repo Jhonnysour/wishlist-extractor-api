@@ -1,5 +1,5 @@
 """
-API endpoints for item extraction and retrieval.
+API endpoints for item extraction, user registration, and authentication.
 """
 
 from __future__ import annotations
@@ -7,12 +7,18 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import (
+    create_access_token,
+    get_current_user,
+    get_password_hash,
+    verify_password,
+)
 from app.models.item import Item
 from app.models.user import User
 from app.schemas.item import ItemResponse, UrlInput
@@ -39,7 +45,13 @@ async def _background_scraping_task(item_id: uuid.UUID, url: str) -> None:
             db_item.title = result.get("title")
             db_item.price = result.get("price")
             db_item.images = result.get("images", [])
-            db_item.status = "COMPLETED"
+            db_item.description = result.get("description")
+            db_item.domain_source = result.get("domain_source")
+            # "ok" -> COMPLETED; "no_data"/"fetch_error" -> FAILED so the app
+            # never shows a COMPLETED item with empty fields.
+            db_item.status = (
+                "COMPLETED" if result.get("status") == "ok" else "FAILED"
+            )
             await session.commit()
         except Exception:
             await session.rollback()
@@ -62,11 +74,12 @@ async def create_item(
     current_user: User = Depends(get_current_user),
 ) -> Item:
     """Submit a product URL for extraction."""
-    item = Item(original_url=body.url, user_id=current_user.id, status="PENDING")
+    url = str(body.url)
+    item = Item(original_url=url, user_id=current_user.id, status="PENDING")
     db.add(item)
     await db.commit()
     await db.refresh(item)
-    background_tasks.add_task(_background_scraping_task, item.id, body.url)
+    background_tasks.add_task(_background_scraping_task, item.id, url)
     return item
 
 
@@ -99,8 +112,12 @@ async def register_user(
     user_in: UserCreate,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Register a new user."""
-    new_user = User(**user_in.model_dump())
+    """Register a new user with a hashed password."""
+    new_user = User(
+        email=user_in.email,
+        username=user_in.username,
+        hashed_password=get_password_hash(user_in.password),
+    )
     db.add(new_user)
     try:
         await db.commit()
@@ -112,3 +129,25 @@ async def register_user(
         )
     await db.refresh(new_user)
     return new_user
+
+
+@router.post("/login")
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Authenticate a user and return a JWT access token."""
+    stmt = select(User).where(User.username == form_data.username)
+    user = (await db.execute(stmt)).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas",
+        )
+    if not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales inválidas",
+        )
+    token = create_access_token(str(user.id))
+    return {"access_token": token, "token_type": "bearer"}

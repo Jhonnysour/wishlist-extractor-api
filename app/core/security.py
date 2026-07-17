@@ -1,15 +1,17 @@
 """
-JWT authentication — validates Supabase-issued tokens and resolves users.
+JWT authentication & password hashing — validates tokens and secures passwords.
 """
 
 from __future__ import annotations
 
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
+from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +22,29 @@ SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 if not SUPABASE_JWT_SECRET:
     raise RuntimeError("SUPABASE_JWT_SECRET is not set in environment")
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/login")
 security = HTTPBearer()
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Check *plain_password* against the stored bcrypt hash."""
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def get_password_hash(password: str) -> str:
+    """Return a bcrypt hash of *password*."""
+    return pwd_context.hash(password)
+
+
+def create_access_token(user_id: str) -> str:
+    """Generate a signed JWT with ``sub`` and ``exp`` claims."""
+    expire = datetime.now(timezone.utc) + timedelta(hours=24)
+    payload = {
+        "sub": user_id,
+        "exp": expire,
+    }
+    return jwt.encode(payload, SUPABASE_JWT_SECRET, algorithm="HS256")
 
 
 async def get_current_user(

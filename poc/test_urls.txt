@@ -1,0 +1,37 @@
+# Lista de URLs para la matriz de cobertura (poc/coverage_matrix.py).
+# Una URL por linea; las lineas con "#" se ignoran.
+#
+# IMPORTANTE: las URLs de producto caducan (listings que terminan, catalogos
+# que rotan). Si un sitio da fetch_error/no_data, reemplaza la URL por un
+# producto que estes viendo AHORA en ese sitio — asi pruebas lo que de verdad
+# te importa. Ejecutar con:
+#   ./venv/Scripts/python.exe -m poc.coverage_matrix
+
+# --- Controles (sandboxes de scraping, siempre disponibles) ---
+https://scrapeme.live/shop/Bulbasaur/
+https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html
+# Control de render JS (no es producto: valida que el tier "rendered" dispare)
+https://quotes.toscrape.com/js/
+
+# --- Shopify (representa millones de tiendas pequenas/medianas) ---
+https://www.allbirds.com/products/mens-tree-runners
+https://www.deathwishcoffee.com/products/death-wish-coffee
+
+# --- Retail grande con SSR decente ---
+https://www.ikea.com/us/en/p/billy-bookcase-white-00263850/
+
+# --- SPA moderada ---
+https://www.apple.com/shop/buy-mac/macbook-air
+
+# --- Anti-bot agresivo (Akamai / propio). Desde tu PC (IP residencial)
+# --- pueden funcionar; desde un servidor cloud suelen bloquear. ---
+https://www.amazon.com/-/es/Nintendo-Switch-Choose-Your-Bundle-2/dp/B0GZ5DFHC5/ref=sr_1_1?crid=OQ2XMCGOUX2F&dib=eyJ2IjoiMSJ9.X90E1Ebw1Przaqzyp57hg0AfdZgo6trE--QmZmtrsrNSDZinUiT-6HBRF99j10q9O6CXQdQWjQ286cYWh86Ihc2zg6UAyTh2l8KfctKmTsXUJM2cH8p2PDFYvRtRomLgEvMSsPqLPptp7lAq86K1Oyi0R57Zwm4AXpU2bPMLHbiuK1txIqA5425Wg0wpgoxtv1050zL530p6hvDtKa4i3NwqGgh-56ALBzThq9OcmKc.yGVIW4DKJFKMnGZOk_PB7fJ8JnuDD3MJ2pDARhMjbtE&dib_tag=se&keywords=nintendo+switch+2&qid=1784225527&sprefix=nin%2Caps%2C154&sr=8-1
+https://www.nike.com/t/air-jordan-1-mid-mens-shoes-tXSJ73/DQ8426-109
+# Hollister: portada como sonda de anti-bot (no es pagina de producto;
+# reemplazala por un producto que estes viendo para la prueba real)
+https://www.hollisterco.com/shop/wd/p/boxy-heavyweight-crew-t-shirt-5-pack-63108360?categoryId=16398&faceout=model&seq=01&pagefm=navigation-grid&prodvm=navigation-grid
+
+# --- Agrega los tuyos (MercadoLibre, eBay, Zara, etc.) ---
+# https://articulo.mercadolibre.com.ve/MLV-...   (pega un producto de tu pais)
+# https://www.ebay.com/itm/...
+https://www.apple.com/shop/buy-mac/macbook-pro/16-inch-silver-standard-display-apple-m5-pro-chip-18-core-cpu-20-core-gpu-24gb-memory-1tb-storage

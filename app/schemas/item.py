@@ -8,11 +8,11 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class UrlInput(BaseModel):
-    url: str
+    url: HttpUrl
 
 
 class ItemResponse(BaseModel):
@@ -21,6 +21,8 @@ class ItemResponse(BaseModel):
     title: Optional[str] = None
     price: Optional[float] = None
     images: list[str] = Field(default_factory=list)
+    description: Optional[str] = None
+    domain_source: Optional[str] = None
     status: str
 
     model_config = {"from_attributes": True}

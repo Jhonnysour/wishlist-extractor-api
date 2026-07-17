@@ -1,0 +1,31 @@
+# Wishlist Extractor API — dependencias directas (Python 3.12)
+# Instalar con:  pip install -r requirements.txt
+# Luego:         playwright install chromium
+
+# --- Web framework / ASGI ---
+fastapi==0.139.0
+uvicorn==0.51.0
+python-multipart==0.0.32
+
+# --- Base de datos (PostgreSQL async / Supabase) ---
+SQLAlchemy==2.0.51
+asyncpg==0.31.0
+
+# --- Validación ---
+pydantic==2.13.4
+email-validator==2.3.0
+
+# --- Scraping ---
+httpx==0.28.1
+brotli==1.2.0
+beautifulsoup4==4.15.0
+lxml==6.1.1
+playwright==1.61.0
+
+# --- Auth / seguridad ---
+PyJWT==2.13.0
+passlib==1.7.4
+bcrypt==4.0.1
+
+# --- Config ---
+python-dotenv==1.2.2
