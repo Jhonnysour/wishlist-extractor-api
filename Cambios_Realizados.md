@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-07-17 — Fix: uvicorn --reload rompia el arranque (NotImplementedError de Playwright)
+- **Que se hizo:** `uvicorn main:app --reload` fallaba al arrancar con `NotImplementedError` en `create_subprocess_exec` (mismo sintoma que el viejo problema de Python 3.14, pero por otra causa).
+  - **Causa raiz (confirmada en el codigo de uvicorn, no adivinada):** `uvicorn/loops/asyncio.py` usa `ProactorEventLoop` en Windows **solo si `use_subprocess` es False**; `--reload` (y `--workers>1`) ponen `use_subprocess=True`, forzando el `SelectorEventLoop`, que en Windows **no puede lanzar subprocesos**. Playwright necesita spawnear el driver del navegador -> revienta. Sin `--reload`, uvicorn usa Proactor y funciona.
+  - **main.py:** (1) fija `WindowsProactorEventLoopPolicy` en Windows; (2) el `lifespan` ahora **captura** el fallo de `browser_manager.start()` y sigue arrancando (degrada a solo-estatico con un warning) en vez de tumbar toda la API; (3) `if __name__=="__main__"` con `uvicorn.run(..., reload=False)` para poder correr `python main.py` y que "just works".
+  - **Verificado:** sin `--reload` arranca completo con navegador (/docs 200, los 7 endpoints presentes). Con `--reload` ya no se cae: arranca degradado a solo-estatico (imprime un traceback ruidoso de una tarea interna de Playwright, pero "Application startup complete").
+  - **Como correr (Windows):** `uvicorn main:app` (sin `--reload`) o `python main.py`. Usar `--reload` deshabilita el tier headless.
+- **Archivos:** main.py (modificado)
+
+---
+
+## 2026-07-17 — Fase 3: CRUD de la wishlist (listar, buscar, comprado, borrar) + fix IDOR
+- **Que se hizo:** Se completo la funcionalidad de wishlist que faltaba para que la app funcione punta a punta.
+  - **Migracion:** `ALTER TABLE items ADD COLUMN purchased boolean NOT NULL DEFAULT false` corrida contra Supabase via script y verificada.
+  - **app/models/item.py:** columna `purchased` (Boolean, default false, server_default). Flag ortogonal al `status` del scraping.
+  - **app/schemas/item.py:** `ItemResponse` expone `purchased`; nuevo `ItemUpdate` (body del PATCH).
+  - **app/api/endpoints.py:**
+    - **`GET /items`** — la wishlist del usuario, newest-first. Query params combinables: `q` (busca en titulo OR original_url con ILIKE — el match por URL resuelve el caso Hollister: la camisa cuyo titulo no dice "hollister" pero cuya URL es hollisterco.com), `purchased` (true=comprados / false=pendientes / omitir=todos), `limit`+`offset` con validacion.
+    - **`PATCH /items/{id}`** — marca/desmarca comprado.
+    - **`DELETE /items/{id}`** — 204.
+    - **Fix IDOR:** helper `_get_owned_item` que filtra por `user_id` y da 404 (no 403, para no revelar existencia). Usado por GET-by-id, PATCH y DELETE. Antes `GET /items/{id}` no filtraba por dueño.
+  - **Auth:** se mantiene el /login propio (facilita probar en Swagger); migracion a Supabase Auth diferida.
+  - **Verificacion:** test E2E in-process (httpx+ASGITransport) con 19 checks, todos pasan: aislamiento por usuario, busqueda por titulo y por URL, case-insensitive, marcar comprado + filtros, combinar q+purchased, IDOR cerrado (GET/PATCH/DELETE de B sobre item de A -> 404 y el item queda intacto), delete propio, paginacion invalida -> 422. Usuarios de prueba borrados al final.
+- **Archivos:** app/models/item.py (modificado), app/schemas/item.py (modificado), app/api/endpoints.py (modificado)
+
+---
+
 ## 2026-07-15 — PoC: Web Scraper asincrono
 - **Que se hizo:** Se creo el extractor de productos de e-commerce. Funcion asincrona `extract_product_data(url)` con httpx + BeautifulSoup. Implementa cascada de extraccion de imagenes (JSON-LD > OpenGraph > img tags), titulo (og:title > title) y precio (og:price:amount). User-Agent Chrome/Win, follow_redirects, max 10 imagenes, filtro anti-logos/icons/avatars. Bloque `__main__` con test a scrapeme.live.
 - **Archivos:** poc/extractor.py (nuevo), poc/__init__.py (nuevo)

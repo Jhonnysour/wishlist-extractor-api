@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,7 @@ from app.core.security import (
 )
 from app.models.item import Item
 from app.models.user import User
-from app.schemas.item import ItemResponse, UrlInput
+from app.schemas.item import ItemResponse, ItemUpdate, UrlInput
 from app.schemas.user import UserCreate, UserResponse
 from poc.extractor import extract_product_data
 
@@ -84,6 +84,65 @@ async def create_item(
 
 
 @router.get(
+    "/items",
+    response_model=list[ItemResponse],
+)
+async def list_items(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    q: str | None = Query(
+        default=None,
+        description="Búsqueda por texto en el título y en la URL del producto.",
+    ),
+    purchased: bool | None = Query(
+        default=None,
+        description="true = solo comprados, false = solo pendientes, omitir = todos.",
+    ),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> list[Item]:
+    """The current user's wishlist, newest first, with optional search."""
+    stmt = select(Item).where(Item.user_id == current_user.id)
+
+    if purchased is not None:
+        stmt = stmt.where(Item.purchased == purchased)
+
+    if q:
+        # Match the title OR the URL: a Hollister shirt whose title never says
+        # "hollister" still matches because its URL is on hollisterco.com.
+        pattern = f"%{q}%"
+        stmt = stmt.where(
+            or_(Item.title.ilike(pattern), Item.original_url.ilike(pattern))
+        )
+
+    stmt = stmt.order_by(Item.created_at.desc()).limit(limit).offset(offset)
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def _get_owned_item(
+    item_id: uuid.UUID,
+    db: AsyncSession,
+    current_user: User,
+) -> Item:
+    """Fetch an item, 404ing unless it belongs to *current_user*.
+
+    A single ownership gate for every by-id route — using 404 (not 403) so it
+    doesn't even reveal that someone else's item exists.
+    """
+    stmt = select(Item).where(
+        Item.id == item_id,
+        Item.user_id == current_user.id,
+    )
+    item = (await db.execute(stmt)).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item {item_id} not found",
+        )
+    return item
+
+
+@router.get(
     "/items/{item_id}",
     response_model=ItemResponse,
 )
@@ -93,14 +152,40 @@ async def get_item(
     current_user: User = Depends(get_current_user),
 ) -> Item:
     """Query the status and result of an extraction task."""
-    stmt = select(Item).where(Item.id == item_id)
-    item = (await db.execute(stmt)).scalar_one_or_none()
-    if item is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Item {item_id} not found",
-        )
+    return await _get_owned_item(item_id, db, current_user)
+
+
+@router.patch(
+    "/items/{item_id}",
+    response_model=ItemResponse,
+)
+async def update_item(
+    item_id: uuid.UUID,
+    body: ItemUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Item:
+    """Mark an item as purchased (or un-mark it)."""
+    item = await _get_owned_item(item_id, db, current_user)
+    item.purchased = body.purchased
+    await db.commit()
+    await db.refresh(item)
     return item
+
+
+@router.delete(
+    "/items/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_item(
+    item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Remove an item from the wishlist."""
+    item = await _get_owned_item(item_id, db, current_user)
+    await db.delete(item)
+    await db.commit()
 
 
 @router.post(

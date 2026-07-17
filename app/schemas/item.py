@@ -15,6 +15,12 @@ class UrlInput(BaseModel):
     url: HttpUrl
 
 
+class ItemUpdate(BaseModel):
+    """Fields the user can change on an existing item."""
+
+    purchased: bool
+
+
 class ItemResponse(BaseModel):
     id: uuid.UUID
     original_url: str
@@ -24,5 +30,6 @@ class ItemResponse(BaseModel):
     description: Optional[str] = None
     domain_source: Optional[str] = None
     status: str
+    purchased: bool = False
 
     model_config = {"from_attributes": True}

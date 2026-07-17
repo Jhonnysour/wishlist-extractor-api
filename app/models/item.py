@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid as _uuid
 from typing import Optional
 
-from sqlalchemy import ARRAY, DateTime, ForeignKey, Numeric, String, text
+from sqlalchemy import ARRAY, Boolean, DateTime, ForeignKey, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -34,6 +34,13 @@ class Item(Base):
         default=list,
     )
     status: Mapped[str] = mapped_column(default="PENDING")
+    # User-facing flag (crossed-out in the app), orthogonal to the scraping
+    # ``status``. Set via PATCH once the user has bought the item.
+    purchased: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=text("false"),
+    )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=text("now()"),
