@@ -763,6 +763,27 @@ async def _fetch_rendered_html(url: str) -> tuple[Optional[str], bool]:
 # ---------------------------------------------------------------------------
 
 
+def _finalize_status(result: dict, blocked: bool, fetched_any: bool) -> str:
+    """Decide the terminal status from what the cascade managed to fill in.
+
+    Usable means a title plus at least a price or an image. Otherwise the
+    outcome says *why* we came up empty: an anti-bot wall (``blocked``), a page
+    we retrieved but couldn't parse (``no_data``), or one we never fetched at
+    all (``fetch_error``). Shared by the network fetch path and the
+    client-supplied-HTML path (Capa 0), so both classify results identically.
+    """
+    has_usable = bool(result.get("title")) and (
+        result.get("price") is not None or bool(result.get("images"))
+    )
+    if has_usable:
+        return "ok"
+    if blocked:
+        return "blocked"
+    if fetched_any:
+        return "no_data"
+    return "fetch_error"
+
+
 async def extract_product_data(url: str) -> dict:
     """Extract product data from *url* using the static tier, falling back to
     the headless render tier when needed.
@@ -808,18 +829,33 @@ async def extract_product_data(url: str) -> dict:
             _parse_into(result, rendered_html, url)
 
     # --- Status ---
-    has_usable = bool(result["title"]) and (
-        result["price"] is not None or bool(result["images"])
-    )
-    if has_usable:
-        result["status"] = "ok"
-    elif blocked:
-        result["status"] = "blocked"
-    elif fetched_any:
-        result["status"] = "no_data"
-    else:
-        result["status"] = "fetch_error"
+    result["status"] = _finalize_status(result, blocked, fetched_any)
 
+    return result
+
+
+def extract_from_html(html: str, url: str) -> dict:
+    """Run the extraction cascade over already-rendered *html* (Capa 0).
+
+    Same parsing as :func:`extract_product_data`, but the HTML is supplied by
+    the client's WebView instead of fetched here — so there's no network tier,
+    no anti-bot wall to hit, and the call is synchronous. Used for pages that
+    never serve their price to a server-side scraper (e.g. Amazon).
+    """
+    parsed = urlparse(url)
+    result: dict = {
+        "title": None,
+        "price": None,
+        "images": [],
+        "description": None,
+        "domain_source": f"{parsed.scheme}://{parsed.netloc}",
+        "status": "no_data",
+        "tier": "client",
+    }
+    _parse_into(result, html, url)
+    # The client already loaded the page in a real browser, so there is no
+    # "blocked" outcome here; fetched_any is True because we have the HTML.
+    result["status"] = _finalize_status(result, blocked=False, fetched_any=True)
     return result
 
 

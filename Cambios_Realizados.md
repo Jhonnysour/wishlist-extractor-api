@@ -2,6 +2,54 @@
 
 ---
 
+## 2026-07-18 — Fix: usar publishableKey (clave nueva sb_publishable_) en vez de anonKey
+- **Que se hizo:** El proyecto de Supabase del usuario usa el **formato nuevo de API keys** (`sb_publishable_...`), no el anon JWT legacy. `Supabase.initialize` estaba con `anonKey:`, que no corresponde a ese formato -> el login no habria arrancado. Cambiado a `publishableKey:`.
+  - Frontend: `env.dart` renombra `supabaseAnonKey`/`SUPABASE_ANON_KEY` -> `supabasePublishableKey`/`SUPABASE_PUBLISHABLE_KEY`; `main.dart` usa `publishableKey:` (se quito el `// ignore: deprecated_member_use`); `widget_test.dart` idem con un `sb_publishable_test`.
+  - **Verificado:** `flutter analyze` sin issues; smoke test pasa.
+  - **Para correr:** `./run-phone.ps1 --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_...`
+  - **Contingencia conocida (no resuelta, a verificar al probar):** si el proyecto firma los access tokens con signing keys asimetricas (JWKS) en vez del JWT Secret compartido (HS256), el backend (que valida con SUPABASE_JWT_SECRET/HS256) dara 401 aunque el login funcione. Sintoma: login OK pero /items -> 401. Fix pendiente en ese caso: verificar por JWKS en `app/core/security.py`.
+- **Archivos:** lib/core/config/env.dart, lib/main.dart, test/widget_test.dart
+
+---
+
+## 2026-07-17 — Fase C: auth consolidada en Supabase Auth — backend + frontend
+- **Que se hizo:** Se reemplazo el auth propio (bcrypt + JWT casero, /login + /users) por Supabase Auth. El backend ahora SOLO valida el JWT que emite Supabase; registro/login viven en el cliente.
+  - **Migracion 0003_supabase_auth:** DELETE de los usuarios viejos de public.users (sus emails chocarian con los nuevos signups; items en cascada), DROP de `hashed_password`, y 3 objetos: `get_email_by_username(text)` (RPC username->email, para conservar login por username sobre el signInWithPassword de Supabase que es por email), `check_username_available(text)` (pre-chequeo antes de signUp), y trigger `on_auth_user_created` sobre `auth.users` que copia (id,email,username de metadata) a public.users. Ambas funciones SECURITY DEFINER con grant a `anon`. Aplicada; el rol del pooler pudo crear el trigger en auth.users.
+  - **Backend:** `security.py` solo conserva `get_current_user` (decodifica el JWT de Supabase con SUPABASE_JWT_SECRET, busca por `sub` en public.users) + HTTPBearer; se borro pwd_context/verify_password/get_password_hash/create_access_token/oauth2_scheme. `endpoints.py`: eliminados POST /users y /login + imports muertos. `models/user.py`: sin `hashed_password`.
+  - **Frontend (wishlist-frontend):** `supabase_flutter ^2.8.0`; `main.dart` async con `Supabase.initialize`; `env.dart` con `SUPABASE_URL` (default = URL del proyecto) y `SUPABASE_ANON_KEY` (dart-define); `auth_repository.dart` reescrito (login = rpc get_email_by_username -> signInWithPassword; register = check_username_available -> signUp con username en metadata); `auth_controller.dart` basado en `onAuthStateChange`/`currentSession` (refresh automatico del token gratis); `dio_client.dart` toma el token de `currentSession.accessToken` y en 401 hace signOut. Se borro `token_storage.dart` (huerfano; Supabase persiste su sesion). `widget_test.dart` adaptado (mock de SharedPreferences + Supabase.initialize).
+  - **Decisiones del usuario:** login sigue por username (via RPC); confirmacion de email DESACTIVADA en el dashboard para testing (login inmediato tras registro); usuarios viejos borrados.
+  - **Verificado:** backend E2E post-migracion (trigger crea public.users; GET/POST /items con token estilo Supabase OK; token mal firmado -> 401; /login -> 404; cleanup de auth.users+public.users). Frontend: `flutter analyze` sin issues; `flutter test` smoke pasa (sin sesion -> pantalla de login). **Pendiente de prueba coordinada en dispositivo:** requiere que el usuario (1) pegue el SUPABASE_ANON_KEY, (2) desactive 'Confirm email' en el dashboard, (3) corra backend `--host 0.0.0.0` + app con `--dart-define=SUPABASE_ANON_KEY=...` y registre/inicie sesion.
+- **Archivos backend:** alembic/versions/0003_supabase_auth.py, app/core/security.py, app/api/endpoints.py, app/models/user.py · **Frontend:** pubspec.yaml, lib/main.dart, lib/core/config/env.dart, lib/core/api/dio_client.dart, lib/features/auth/data/auth_repository.dart, lib/features/auth/presentation/providers/auth_controller.dart, (borrado) lib/core/storage/token_storage.dart, test/widget_test.dart
+
+---
+
+## 2026-07-17 — Fase B: Capa 0 (captura por WebView) — backend + frontend
+- **Que se hizo:** Fallback para paginas cuyo precio nunca llega a un scraper de servidor (Amazon): la app carga la pagina en un WebView headless y manda el HTML renderizado al backend para re-extraer.
+  - **Backend:**
+    - `poc/extractor.py`: refactor `_finalize_status(result, blocked, fetched_any)` (extraido de `extract_product_data`, sin cambio de comportamiento) + nueva `extract_from_html(html, url)` sincrona que reusa `_parse_into` y `_finalize_status` (tier="client", sin fetch de red ni "blocked").
+    - `app/schemas/item.py`: `ItemFromHtml { html: str }`.
+    - `app/api/endpoints.py`: `POST /items/{id}/retry-from-html` — usa `_get_owned_item` (ownership/IDOR cerrado), extrae sincrono, actualiza el item y devuelve el `ItemResponse` (200). "ok"->COMPLETED, resto->FAILED.
+  - **Frontend (wishlist-frontend):**
+    - `pubspec.yaml`: `flutter_inappwebview ^6.1.5`.
+    - `lib/features/webview_capture/data/webview_capture_service.dart`: `HeadlessInAppWebView` (sin UI), UA de Chrome, settle 3s tras onLoadStop, timeout 30s, captura `document.documentElement.outerHTML`.
+    - `.../webview_capture_repository.dart`: `retryFromHtml(id, html)` -> POST retry-from-html.
+    - `wishlist_providers.dart`: en `_poll`, cuando el item queda FAILED dispara `_captureFallback` (una sola vez por item, guardado con `_capturingIds`). El camino feliz (10/11 sitios) nunca abre el WebView.
+  - **Verificado:** backend E2E 10/10 (extract_from_html da 63.0/ok/tier=client; endpoint pasa item a COMPLETED con precio; IDOR de otro user -> 404; HTML basura -> FAILED) + tests unitarios del extractor siguen pasando (refactor sin regresion). Frontend: `flutter pub get` resuelve, `flutter analyze` de los archivos nuevos + integracion sin issues. **Pendiente de prueba en dispositivo/emulador (coordinada):** agregar una URL de Amazon y ver PENDING->FAILED->WebView->COMPLETED con precio real.
+- **Archivos backend:** poc/extractor.py, app/schemas/item.py, app/api/endpoints.py · **Frontend:** pubspec.yaml, lib/features/webview_capture/*, wishlist_providers.dart
+
+---
+
+## 2026-07-17 — Fase A: Alembic (migraciones versionadas) adoptado sobre la DB existente
+- **Que se hizo:** Se adopto Alembic para versionar el esquema y dejar de aplicar `ALTER TABLE` sueltos a mano.
+  - `alembic init -t async` (template async, ya usamos asyncpg). `alembic/env.py` configurado para: cargar `.env`, apuntar `target_metadata` a `Base.metadata`, importar los modelos (item, user), tomar `DATABASE_URL` del entorno, y usar `connect_args={"statement_cache_size": 0}` como la app (pooler de Supabase). `compare_type=False` a proposito: String sin longitud vs TEXT/VARCHAR daba falsos "type change" en cada autogenerate.
+  - **Baseline en 2 migraciones:** `0001_baseline` = create_table de users+items **fiel a la DB actual** (para que el `stamp` sea no-op real y una DB desde cero reproduzca el esquema). `0002_items_notnull` = `SET NOT NULL` en `items.images` y `items.status` — drift real (la app siempre los llena, pero estaban nullable; 0 filas con NULL, seguro). Primer cambio aplicado 100% via workflow de migracion, sin ALTER manual.
+  - **Adopcion:** `alembic stamp 0001_baseline` (la DB ya tenia las tablas) -> `alembic upgrade head` (aplico 0002). `alembic current` = `0002_items_notnull (head)`.
+  - **Verificado:** images/status ahora `is_nullable=NO`; un autogenerate de control sale **vacio** (`upgrade()` = solo `pass`) probando que modelos == DB sin drift; el E2E de Fase 3 (19 checks) pasa completo (los inserts respetan el NOT NULL nuevo).
+  - **De aqui en mas:** cada cambio de esquema = `alembic revision --autogenerate` + `alembic upgrade head`. Las Fases B y C agregaran migraciones sobre 0002.
+- **Archivos:** requirements.txt, alembic.ini, alembic/env.py, alembic/versions/0001_baseline.py, alembic/versions/0002_items_notnull.py
+
+---
+
 ## 2026-07-17 — CORS habilitado (desbloquea el frontend Flutter, incl. Web)
 - **Que se hizo:** Se agrego `CORSMiddleware` en main.py para que la app Flutter (sobre todo Flutter Web en un navegador) pueda llamar la API.
   - La API es **token-based** (`Authorization: Bearer`), NO usa cookies -> no necesita CORS con credenciales, asi que en dev se permite cualquier origen. `allow_origins` sale de la env `CORS_ORIGINS` (default `*`; en produccion se setea una lista separada por comas). `allow_credentials=False`, `allow_methods=["*"]`, `allow_headers=["*"]`.

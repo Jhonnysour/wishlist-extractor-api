@@ -21,6 +21,17 @@ class ItemUpdate(BaseModel):
     purchased: bool
 
 
+class ItemFromHtml(BaseModel):
+    """Rendered HTML captured by the client's WebView (Capa 0 fallback).
+
+    The product URL is already stored on the item, so only the page HTML is
+    sent. Used to extract data from pages that never serve their price to a
+    server-side scraper.
+    """
+
+    html: str
+
+
 class ItemResponse(BaseModel):
     id: uuid.UUID
     original_url: str
