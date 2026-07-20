@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-07-18 — Mejora: imagenes de Amazon en full-res (no borrosas)
+- **Que se hizo:** En la app las imagenes de Amazon se veian borrosas: el extractor tomaba las variantes **miniatura** del carrusel. Amazon codifica el tamano en el nombre del archivo (`/images/I/<id>._AC_SX466_.jpg`); quitando ese segmento `._..._` se obtiene el original en resolucion nativa.
+  - `poc/extractor.py`: nuevo `_upgrade_image_url()` (regex sobre el path `/images/I/`, especifico de Amazon -> otras URLs pasan intactas) aplicado a las 3 fuentes de imagenes en `_extract_images` (og:image, JSON-LD, `<img>`). Como corre dentro de `_parse_into`, aplica tanto al scraping normal como a la Capa 0.
+  - **Verificado:** 8 casos unitarios nuevos en `poc/test_extractor.py` (quita `_AC_SX466_`/`_SS40_`/multiples modificadores/query; conserva ids con `+`/`-`; no toca URLs ya full-res ni de otros sitios). Suite completa pasa; scrapeme sin regresion.
+  - **Nota:** aplica a items NUEVOS; el item ya agregado conserva las URLs viejas (re-agregarlo lo actualiza).
+- **Archivos:** poc/extractor.py, poc/test_extractor.py
+
+---
+
 ## 2026-07-18 — Fix: backend valida tokens ES256 de Supabase (JWKS) — resuelve el 401
 - **Que se hizo:** Se confirmo en dispositivo la contingencia prevista: registro/login OK en Supabase pero `GET /items` daba **401** (el interceptor de Dio cerraba sesion -> volvia al login). Causa: el proyecto firma los access tokens con **signing keys asimetricas (ES256)**, no con el `JWT Secret` compartido (HS256). El JWKS del proyecto (`/auth/v1/.well-known/jwks.json`) confirma una sola clave `alg=ES256, kty=EC, P-256`.
   - `app/core/security.py`: `get_current_user` ahora verifica el token segun su `alg` — `_decode_token` usa `PyJWKClient` (JWKS, cacheado) para ES256/RS256 y el secret compartido para HS256 (fallback). La verificacion (que puede bloquear en el fetch del JWKS en frio) corre via `asyncio.to_thread`.

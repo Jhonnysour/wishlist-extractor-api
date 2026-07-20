@@ -351,6 +351,25 @@ def _extract_description(soup: BeautifulSoup) -> Optional[str]:
     return None
 
 
+# Amazon encodes the thumbnail size in the image filename, e.g.
+# /images/I/71abc._AC_SX466_.jpg. Dropping that ._…_ segment yields
+# /images/I/71abc.jpg — the full-resolution original. The /images/I/ path is
+# Amazon-specific, so non-Amazon URLs never match and pass through untouched.
+_AMAZON_IMG_SIZE_RE = re.compile(
+    r"(/images/I/[^/.]+)\.[^/]+?(\.(?:jpg|jpeg|png|gif|webp))(\?.*)?$",
+    re.IGNORECASE,
+)
+
+
+def _upgrade_image_url(url: str) -> str:
+    """Return the highest-resolution variant of *url* when we can infer one.
+
+    Currently strips Amazon's size token so carousel thumbnails (which look
+    blurry blown up in the app) resolve to the native-resolution image.
+    """
+    return _AMAZON_IMG_SIZE_RE.sub(r"\1\2", url)
+
+
 def _extract_images(soup: BeautifulSoup, base_url: str) -> list[str]:
     images: list[str] = []
     seen: set[str] = set()
@@ -359,7 +378,7 @@ def _extract_images(soup: BeautifulSoup, base_url: str) -> list[str]:
     for meta in soup.find_all("meta", attrs={"property": "og:image"}):
         content = meta.get("content")
         if content:
-            full = _absolutize_url(content, base_url)
+            full = _upgrade_image_url(_absolutize_url(content, base_url))
             if full not in seen:
                 images.append(full)
                 seen.add(full)
@@ -377,7 +396,7 @@ def _extract_images(soup: BeautifulSoup, base_url: str) -> list[str]:
             if isinstance(c, dict):
                 c = c.get("url") or c.get("contentUrl")
             if isinstance(c, str):
-                full = _absolutize_url(c, base_url)
+                full = _upgrade_image_url(_absolutize_url(c, base_url))
                 if full not in seen:
                     images.append(full)
                     seen.add(full)
@@ -389,7 +408,7 @@ def _extract_images(soup: BeautifulSoup, base_url: str) -> list[str]:
             continue
         if not _is_relevant_image(src):
             continue
-        full = _absolutize_url(src, base_url)
+        full = _upgrade_image_url(_absolutize_url(src, base_url))
         if full in seen:
             continue
         images.append(full)

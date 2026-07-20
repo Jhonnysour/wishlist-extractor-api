@@ -21,6 +21,7 @@ from poc.extractor import (
     _extract_price,
     _extract_price_jsonld,
     _looks_blocked,
+    _upgrade_image_url,
 )
 
 _failures: list[str] = []
@@ -351,6 +352,30 @@ def test_block_detection() -> None:
     check("sin title", _looks_blocked("<html><body>x</body></html>"), False)
 
 
+def test_image_upgrade() -> None:
+    print("\n[imagenes: full-res en Amazon]")
+    base = "https://m.media-amazon.com/images/I/61abcXYZ"
+    check("quita el token de tamano (_AC_SX466_)",
+          _upgrade_image_url(f"{base}._AC_SX466_.jpg"), f"{base}.jpg")
+    check("miniatura chica (_SS40_)",
+          _upgrade_image_url(f"{base}._SS40_.jpg"), f"{base}.jpg")
+    check("varios modificadores (_SX300_SY300_)",
+          _upgrade_image_url(f"{base}._AC_SX300_SY300_.jpg"), f"{base}.jpg")
+    check("id con + y - se conserva",
+          _upgrade_image_url("https://m.media-amazon.com/images/I/71pG+ab-L._AC_SL1500_.jpg"),
+          "https://m.media-amazon.com/images/I/71pG+ab-L.jpg")
+    check("otro host de Amazon (ssl-images)",
+          _upgrade_image_url("https://images-na.ssl-images-amazon.com/images/I/81x._SS40_.jpg"),
+          "https://images-na.ssl-images-amazon.com/images/I/81x.jpg")
+    check("descarta query de tamano",
+          _upgrade_image_url(f"{base}._AC_SX466_.jpg?x=1"), f"{base}.jpg")
+    # No debe tocar lo que ya es full-res ni URLs de otros sitios.
+    check("ya full-res: intacta", _upgrade_image_url(f"{base}.jpg"), f"{base}.jpg")
+    check("no-Amazon: intacta",
+          _upgrade_image_url("https://scrapeme.live/wp-content/uploads/001.png"),
+          "https://scrapeme.live/wp-content/uploads/001.png")
+
+
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -360,6 +385,7 @@ def main() -> int:
     test_jsonld()
     test_upsell_context()
     test_block_detection()
+    test_image_upgrade()
 
     print("\n" + "=" * 50)
     if _failures:
