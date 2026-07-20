@@ -16,9 +16,14 @@ class UrlInput(BaseModel):
 
 
 class ItemUpdate(BaseModel):
-    """Fields the user can change on an existing item."""
+    """Partial update of an item — only the fields sent are applied.
 
-    purchased: bool
+    ``images`` is a curated re-ordering/subset of the item's current images
+    (first = cover); the endpoint rejects any URL that isn't already on the item.
+    """
+
+    purchased: Optional[bool] = None
+    images: Optional[list[str]] = None
 
 
 class ItemFromHtml(BaseModel):

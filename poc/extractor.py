@@ -253,6 +253,12 @@ def _is_relevant_image(src: str) -> bool:
     lower = src.lower()
     if any(kw in lower for kw in EXCLUDE_IMG_KEYWORDS):
         return False
+    # On Amazon, product photos live under /images/I/; everything else on the
+    # media host (/images/G/ site graphics, sprites, badges) is chrome. This is
+    # where the render tier's <img> sweep picks up the most junk.
+    if "media-amazon.com" in lower or "ssl-images-amazon.com" in lower:
+        if "/images/i/" not in lower:
+            return False
     return True
 
 

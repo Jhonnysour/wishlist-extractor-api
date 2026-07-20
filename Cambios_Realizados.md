@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-07-18 — Curacion de imagenes (opcional, en el detalle) + menos junk de Amazon
+- **Que se hizo:** El scraping traia imagenes ajenas al producto (sobre todo en Amazon via Capa 0). En vez de forzar una seleccion en cada alta (friccion), la curacion es **opcional dentro del detalle**: quitar las que no van y elegir portada.
+  - **Backend:**
+    - `app/schemas/item.py`: `ItemUpdate` ahora es **update parcial** — `purchased` y `images` opcionales (solo se aplica lo enviado).
+    - `app/api/endpoints.py`: `PATCH /items/{id}` acepta `images` (subset reordenado, portada primero) y **valida que sea un subconjunto** de las imagenes actuales (400 si hay una URL ajena — evita inyeccion). `purchased` sigue igual via update parcial.
+    - `poc/extractor.py`: `_is_relevant_image` descarta imagenes de Amazon que no esten bajo `/images/I/` (deja fotos de producto, quita graficos de sitio `/images/G/`, sprites, badges). Reduce el junk de origen.
+  - **Frontend (wishlist-frontend):**
+    - `wishlist_repository.dart` + `wishlist_providers.dart`: `updateImages(id, images)` -> PATCH.
+    - `item_detail_screen.dart`: accion "Editar imagenes" en el AppBar (solo si COMPLETED con imagenes) -> pantalla editora (grid): toca para quitar/incluir, estrella para portada, "Guardar" persiste el subset reordenado; cancelar no cambia nada.
+  - **Verificado:** backend E2E (PATCH subset+reorden -> orden correcto con portada; URL ajena -> 400; `purchased` parcial no toca images; IDOR -> 404; filtro Amazon /images/I/ correcto; extractor sin regresion, scrapeme 7 imgs). Frontend `flutter analyze` sin issues + smoke test pasa. **Pendiente prueba en dispositivo del flujo de edicion.**
+- **Archivos backend:** app/schemas/item.py, app/api/endpoints.py, poc/extractor.py · **Frontend:** wishlist_repository.dart, wishlist_providers.dart, item_detail_screen.dart
+
+---
+
 ## 2026-07-18 — Mejora: imagenes de Amazon en full-res (no borrosas)
 - **Que se hizo:** En la app las imagenes de Amazon se veian borrosas: el extractor tomaba las variantes **miniatura** del carrusel. Amazon codifica el tamano en el nombre del archivo (`/images/I/<id>._AC_SX466_.jpg`); quitando ese segmento `._..._` se obtiene el original en resolucion nativa.
   - `poc/extractor.py`: nuevo `_upgrade_image_url()` (regex sobre el path `/images/I/`, especifico de Amazon -> otras URLs pasan intactas) aplicado a las 3 fuentes de imagenes en `_extract_images` (og:image, JSON-LD, `<img>`). Como corre dentro de `_parse_into`, aplica tanto al scraping normal como a la Capa 0.

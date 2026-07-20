@@ -157,9 +157,26 @@ async def update_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Item:
-    """Mark an item as purchased (or un-mark it)."""
+    """Update an item: toggle ``purchased`` and/or curate its ``images``."""
     item = await _get_owned_item(item_id, db, current_user)
-    item.purchased = body.purchased
+    data = body.model_dump(exclude_unset=True)
+
+    if "purchased" in data:
+        item.purchased = data["purchased"]
+
+    if "images" in data:
+        new_images = data["images"] or []
+        # Curation only: the new list must be a re-ordering/subset of what we
+        # already scraped, never arbitrary URLs the client made up.
+        current = set(item.images or [])
+        invalid = [url for url in new_images if url not in current]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Las imágenes deben ser un subconjunto de las actuales.",
+            )
+        item.images = new_images
+
     await db.commit()
     await db.refresh(item)
     return item
