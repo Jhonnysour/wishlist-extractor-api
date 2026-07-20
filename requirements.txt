@@ -24,8 +24,7 @@ playwright==1.61.0
 
 # --- Auth / seguridad ---
 PyJWT==2.13.0
-passlib==1.7.4
-bcrypt==4.0.1
+cryptography==49.0.0  # verificar tokens ES256 de Supabase (JWKS)
 
 # --- Config ---
 python-dotenv==1.2.2

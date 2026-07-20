@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-07-18 — Fix: backend valida tokens ES256 de Supabase (JWKS) — resuelve el 401
+- **Que se hizo:** Se confirmo en dispositivo la contingencia prevista: registro/login OK en Supabase pero `GET /items` daba **401** (el interceptor de Dio cerraba sesion -> volvia al login). Causa: el proyecto firma los access tokens con **signing keys asimetricas (ES256)**, no con el `JWT Secret` compartido (HS256). El JWKS del proyecto (`/auth/v1/.well-known/jwks.json`) confirma una sola clave `alg=ES256, kty=EC, P-256`.
+  - `app/core/security.py`: `get_current_user` ahora verifica el token segun su `alg` — `_decode_token` usa `PyJWKClient` (JWKS, cacheado) para ES256/RS256 y el secret compartido para HS256 (fallback). La verificacion (que puede bloquear en el fetch del JWKS en frio) corre via `asyncio.to_thread`.
+  - Dependencias: `cryptography` (necesaria para ES256) agregada a requirements; se quitaron `passlib`/`bcrypt` (ya no se usan tras mudar el auth a Supabase). `SUPABASE_URL` agregada a `.env` (y default en codigo) para construir la URL del JWKS.
+  - **Verificado de verdad (no simulado):** se creo un usuario real via `POST /auth/v1/signup` con la publishable key -> token ES256 real -> el backend lo verifica y `GET /items` -> **200** (antes 401), `POST /items` -> 202. Usuario de prueba borrado de auth.users + public.users.
+- **Archivos:** app/core/security.py, requirements.txt, .env (SUPABASE_URL, no versionado)
+
+---
+
 ## 2026-07-18 — Fix: usar publishableKey (clave nueva sb_publishable_) en vez de anonKey
 - **Que se hizo:** El proyecto de Supabase del usuario usa el **formato nuevo de API keys** (`sb_publishable_...`), no el anon JWT legacy. `Supabase.initialize` estaba con `anonKey:`, que no corresponde a ese formato -> el login no habria arrancado. Cambiado a `publishableKey:`.
   - Frontend: `env.dart` renombra `supabaseAnonKey`/`SUPABASE_ANON_KEY` -> `supabasePublishableKey`/`SUPABASE_PUBLISHABLE_KEY`; `main.dart` usa `publishableKey:` (se quito el `// ignore: deprecated_member_use`); `widget_test.dart` idem con un `sb_publishable_test`.
