@@ -20,10 +20,12 @@ class ItemUpdate(BaseModel):
 
     ``images`` is a curated re-ordering/subset of the item's current images
     (first = cover); the endpoint rejects any URL that isn't already on the item.
+    ``title`` lets the user rename the item (trimmed, non-empty).
     """
 
     purchased: Optional[bool] = None
     images: Optional[list[str]] = None
+    title: Optional[str] = Field(default=None, max_length=255)
 
 
 class ItemFromHtml(BaseModel):

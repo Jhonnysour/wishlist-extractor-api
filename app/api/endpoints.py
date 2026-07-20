@@ -164,6 +164,15 @@ async def update_item(
     if "purchased" in data:
         item.purchased = data["purchased"]
 
+    if "title" in data:
+        title = (data["title"] or "").strip()
+        if not title:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El título no puede estar vacío.",
+            )
+        item.title = title
+
     if "images" in data:
         new_images = data["images"] or []
         # Curation only: the new list must be a re-ordering/subset of what we

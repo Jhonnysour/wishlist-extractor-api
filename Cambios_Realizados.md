@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-07-18 — Editar el titulo del item desde el detalle
+- **Que se hizo:** Extension del PATCH parcial para permitir renombrar un item.
+  - **Backend:** `ItemUpdate.title` (Optional, `max_length=255`); `PATCH /items/{id}` recorta el titulo, rechaza vacio (400) y aplica el cambio. Verificado E2E: trim OK, vacio->400, >255->422, y `purchased`-only no toca el titulo.
+  - **Frontend:** `updateTitle` en repo + controller; en el detalle, un lapiz junto al titulo abre un dialogo con TextField (maxLength 255) -> guarda via PATCH. `flutter analyze` sin issues + smoke test pasa.
+- **Archivos backend:** app/schemas/item.py, app/api/endpoints.py · **Frontend:** wishlist_repository.dart, wishlist_providers.dart, item_detail_screen.dart
+
+---
+
 ## 2026-07-18 — Curacion de imagenes (opcional, en el detalle) + menos junk de Amazon
 - **Que se hizo:** El scraping traia imagenes ajenas al producto (sobre todo en Amazon via Capa 0). En vez de forzar una seleccion en cada alta (friccion), la curacion es **opcional dentro del detalle**: quitar las que no van y elegir portada.
   - **Backend:**
