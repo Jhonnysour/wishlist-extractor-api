@@ -75,6 +75,13 @@ from app.api.endpoints import router  # noqa: E402
 app.include_router(router, prefix="/api/v1")
 
 
+@app.get("/health")
+async def health() -> dict[str, str]:
+    """Liveness check for the host's health monitor and the anti-sleep pinger.
+    Unauthenticated and dependency-free so it stays cheap and always reachable."""
+    return {"status": "ok"}
+
+
 if __name__ == "__main__":
     import uvicorn
 

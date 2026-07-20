@@ -1,0 +1,27 @@
+# Render Blueprint — despliega el backend como servicio web gratis con auto-deploy.
+# Docs: https://render.com/docs/blueprint-spec
+#
+# Deploy ligero (sin Chromium): NO se corre `playwright install`, así que el tier
+# headless queda inactivo y el lifespan degrada a solo-estático; el scraping
+# pesado lo cubre la Capa 0 del teléfono. Los 3 secretos (sync:false) se cargan
+# en el dashboard de Render, nunca en el repo.
+services:
+  - type: web
+    name: wishlist-extractor-api
+    runtime: python
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false

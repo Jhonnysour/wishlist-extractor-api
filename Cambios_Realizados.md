@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-07-18 — Deploy: render.yaml + /health (backend hacia Render, capa gratis)
+- **Que se hizo:** Preparar el backend para hostearse en Render con auto-deploy desde GitHub.
+  - `main.py`: endpoint `GET /health` (sin auth) -> `{"status":"ok"}` para el health check de Render y el pinger anti-sleep.
+  - `render.yaml`: blueprint del servicio web (Python, plan free, `pip install -r requirements.txt` SIN `playwright install`, `uvicorn main:app --host 0.0.0.0 --port $PORT`, healthCheckPath /health, autoDeploy). Los 3 env vars (DATABASE_URL, SUPABASE_JWT_SECRET, SUPABASE_URL) van con `sync:false` -> se cargan como secretos en el dashboard, no en el repo. PYTHON_VERSION 3.12.7.
+  - **Deploy ligero a proposito:** sin Chromium en el server (IP de datacenter = bloqueada, como la VPN); el scraping pesado lo cubre la Capa 0 del telefono. El lifespan ya degrada a solo-estatico.
+  - `DESPLIEGUE.md`: guia con reparto de tareas (Claude vs usuario) y pasos manuales (Render, GitHub Actions, UptimeRobot).
+  - **Verificado:** `/health` -> 200 en el openapi/ASGI.
+  - **Sigue (usuario):** crear cuenta Render -> New+ -> Blueprint -> repo -> pegar 3 secretos -> deploy -> pasar la URL.
+- **Archivos:** main.py, render.yaml, DESPLIEGUE.md
+
+---
+
 ## 2026-07-18 — Editar el titulo del item desde el detalle
 - **Que se hizo:** Extension del PATCH parcial para permitir renombrar un item.
   - **Backend:** `ItemUpdate.title` (Optional, `max_length=255`); `PATCH /items/{id}` recorta el titulo, rechaza vacio (400) y aplica el cambio. Verificado E2E: trim OK, vacio->400, >255->422, y `purchased`-only no toca el titulo.
