@@ -75,10 +75,12 @@ from app.api.endpoints import router  # noqa: E402
 app.include_router(router, prefix="/api/v1")
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health() -> dict[str, str]:
     """Liveness check for the host's health monitor and the anti-sleep pinger.
-    Unauthenticated and dependency-free so it stays cheap and always reachable."""
+    Accepts HEAD too because uptime monitors (e.g. UptimeRobot) default to HEAD;
+    a GET-only route would answer them 405 and read as "down". Unauthenticated
+    and dependency-free so it stays cheap and always reachable."""
     return {"status": "ok"}
 
 
