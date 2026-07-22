@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-07-21 — Multiples listas con nombre (agrupar productos) — backend
+- **Que se hizo:** El usuario ahora puede tener varias listas con nombre; cada producto pertenece a UNA lista. **Sin borrar la DB** — migracion con backfill.
+  - **Migracion 0004_lists** (retrocompatible): crea tabla `lists`, una "Mi lista" por usuario existente, agrega `items.list_id` (FK ON DELETE CASCADE, **nullable** para no romper el codigo desplegado viejo), backfillea cada item a la lista de su dueño, y actualiza el trigger de signup para que cada usuario nuevo nazca con "Mi lista". **Aplicada a prod: 0 items sin list_id, 0 usuarios sin lista.**
+  - **Modelos:** `app/models/item_list.py` (ItemList, tabla `lists`), `Item.list_id` + relacion, `User.lists`.
+  - **Schemas:** `app/schemas/list.py` (ListCreate/Update/Response con item_count); `UrlInput.list_id` y `ItemResponse.list_id` (opcionales).
+  - **Endpoints:** `POST/GET /lists`, `PATCH/DELETE /lists/{id}` (delete = cascade borra items). `POST /items` recibe `list_id` (opcional -> default a la lista mas vieja del usuario). `GET /items?list_id=` filtra por lista. Helpers `_get_owned_list` / `_default_list_id`. Todo con ownership (IDOR -> 404).
+  - **Diseño retrocompatible:** `list_id` opcional en POST y nullable en DB -> la app/APK viejos siguen funcionando (sus items caen en "Mi lista") durante el rollout.
+  - **Verificado:** E2E 14/14 (crear listas, item con/sin list_id, filtro por lista, item_count, rename, delete-cascade, IDOR).
+  - **Pendiente:** frontend (pantalla de listas + wishlist por lista) y el deploy (Manual Deploy en Render trae esto + el fix de /health HEAD).
+- **Archivos:** alembic/versions/0004_lists.py, alembic/env.py, app/models/item_list.py, app/models/item.py, app/models/user.py, app/schemas/list.py, app/schemas/item.py, app/api/endpoints.py
+
+---
+
 ## 2026-07-18 — Deploy: render.yaml + /health (backend hacia Render, capa gratis)
 - **Que se hizo:** Preparar el backend para hostearse en Render con auto-deploy desde GitHub.
   - `main.py`: endpoint `GET /health` (sin auth) -> `{"status":"ok"}` para el health check de Render y el pinger anti-sleep.

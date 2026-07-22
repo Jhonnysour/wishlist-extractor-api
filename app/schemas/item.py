@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field, HttpUrl
 
 class UrlInput(BaseModel):
     url: HttpUrl
+    # Which list to add the item to. Optional for backward-compat: when absent,
+    # the endpoint uses the user's default list.
+    list_id: Optional[uuid.UUID] = None
 
 
 class ItemUpdate(BaseModel):
@@ -41,6 +44,7 @@ class ItemFromHtml(BaseModel):
 
 class ItemResponse(BaseModel):
     id: uuid.UUID
+    list_id: Optional[uuid.UUID] = None
     original_url: str
     title: Optional[str] = None
     price: Optional[float] = None

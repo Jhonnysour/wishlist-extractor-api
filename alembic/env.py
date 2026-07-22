@@ -15,7 +15,7 @@ load_dotenv()
 # Import the app's declarative Base and every model module so that all tables
 # register on Base.metadata — this is what --autogenerate compares against.
 from app.core.database import Base  # noqa: E402
-from app.models import item, user  # noqa: E402,F401
+from app.models import item, item_list, user  # noqa: E402,F401
 
 config = context.config
 

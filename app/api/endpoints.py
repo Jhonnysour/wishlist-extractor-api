@@ -7,17 +7,150 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.item import Item
+from app.models.item_list import ItemList
 from app.models.user import User
 from app.schemas.item import ItemFromHtml, ItemResponse, ItemUpdate, UrlInput
+from app.schemas.list import ListCreate, ListResponse, ListUpdate
 from poc.extractor import extract_from_html, extract_product_data
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Lists (named groups of items)
+# ---------------------------------------------------------------------------
+
+
+async def _get_owned_list(
+    list_id: uuid.UUID,
+    db: AsyncSession,
+    current_user: User,
+) -> ItemList:
+    """Fetch a list, 404ing unless it belongs to *current_user*."""
+    stmt = select(ItemList).where(
+        ItemList.id == list_id,
+        ItemList.user_id == current_user.id,
+    )
+    lst = (await db.execute(stmt)).scalar_one_or_none()
+    if lst is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"List {list_id} not found",
+        )
+    return lst
+
+
+async def _default_list_id(db: AsyncSession, current_user: User) -> uuid.UUID:
+    """The user's oldest list, creating a 'Mi lista' if they somehow have none.
+    Used when a client adds an item without specifying a list."""
+    stmt = (
+        select(ItemList.id)
+        .where(ItemList.user_id == current_user.id)
+        .order_by(ItemList.created_at)
+        .limit(1)
+    )
+    lid = (await db.execute(stmt)).scalar_one_or_none()
+    if lid is None:
+        lst = ItemList(user_id=current_user.id, name="Mi lista")
+        db.add(lst)
+        await db.flush()
+        lid = lst.id
+    return lid
+
+
+@router.post("/lists", response_model=ListResponse, status_code=status.HTTP_201_CREATED)
+async def create_list(
+    body: ListCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ListResponse:
+    """Create a new list for the current user."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El nombre de la lista no puede estar vacío.",
+        )
+    lst = ItemList(user_id=current_user.id, name=name)
+    db.add(lst)
+    await db.commit()
+    await db.refresh(lst)
+    return ListResponse(
+        id=lst.id, name=lst.name, created_at=lst.created_at, item_count=0
+    )
+
+
+@router.get("/lists", response_model=list[ListResponse])
+async def list_lists(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ListResponse]:
+    """The current user's lists, oldest first, each with its item count."""
+    stmt = (
+        select(ItemList, func.count(Item.id))
+        .outerjoin(Item, Item.list_id == ItemList.id)
+        .where(ItemList.user_id == current_user.id)
+        .group_by(ItemList.id)
+        .order_by(ItemList.created_at)
+    )
+    rows = (await db.execute(stmt)).all()
+    return [
+        ListResponse(
+            id=lst.id, name=lst.name, created_at=lst.created_at, item_count=count
+        )
+        for lst, count in rows
+    ]
+
+
+@router.patch("/lists/{list_id}", response_model=ListResponse)
+async def update_list(
+    list_id: uuid.UUID,
+    body: ListUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ListResponse:
+    """Rename a list."""
+    lst = await _get_owned_list(list_id, db, current_user)
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El nombre de la lista no puede estar vacío.",
+        )
+    lst.name = name
+    await db.commit()
+    await db.refresh(lst)
+    count = (
+        await db.execute(
+            select(func.count(Item.id)).where(Item.list_id == lst.id)
+        )
+    ).scalar_one()
+    return ListResponse(
+        id=lst.id, name=lst.name, created_at=lst.created_at, item_count=count
+    )
+
+
+@router.delete("/lists/{list_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_list(
+    list_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Delete a list AND its items (the DB cascades via items.list_id)."""
+    lst = await _get_owned_list(list_id, db, current_user)
+    await db.delete(lst)
+    await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Items
+# ---------------------------------------------------------------------------
 
 
 async def _background_scraping_task(item_id: uuid.UUID, url: str) -> None:
@@ -65,9 +198,19 @@ async def create_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Item:
-    """Submit a product URL for extraction."""
+    """Submit a product URL for extraction, into a list."""
     url = str(body.url)
-    item = Item(original_url=url, user_id=current_user.id, status="PENDING")
+    if body.list_id is not None:
+        await _get_owned_list(body.list_id, db, current_user)  # 404 if not owned
+        list_id = body.list_id
+    else:
+        list_id = await _default_list_id(db, current_user)
+    item = Item(
+        original_url=url,
+        user_id=current_user.id,
+        list_id=list_id,
+        status="PENDING",
+    )
     db.add(item)
     await db.commit()
     await db.refresh(item)
@@ -82,6 +225,10 @@ async def create_item(
 async def list_items(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    list_id: uuid.UUID | None = Query(
+        default=None,
+        description="Solo los items de esta lista. Omitir = todos los del usuario.",
+    ),
     q: str | None = Query(
         default=None,
         description="Búsqueda por texto en el título y en la URL del producto.",
@@ -93,8 +240,12 @@ async def list_items(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> list[Item]:
-    """The current user's wishlist, newest first, with optional search."""
+    """The current user's items, newest first, filtered by list and/or search."""
     stmt = select(Item).where(Item.user_id == current_user.id)
+
+    if list_id is not None:
+        await _get_owned_list(list_id, db, current_user)  # 404 if not owned
+        stmt = stmt.where(Item.list_id == list_id)
 
     if purchased is not None:
         stmt = stmt.where(Item.purchased == purchased)

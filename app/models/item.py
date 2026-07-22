@@ -24,6 +24,13 @@ class Item(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=True,
     )
+    # The list this item belongs to. Nullable for backward-compat during the
+    # rollout (old clients POST without it → the endpoint fills the default
+    # list); every item created by current code has one.
+    list_id: Mapped[_uuid.UUID | None] = mapped_column(
+        ForeignKey("lists.id", ondelete="CASCADE"),
+        nullable=True,
+    )
     original_url: Mapped[str]
     domain_source: Mapped[Optional[str]]
     title: Mapped[Optional[str]]
@@ -47,3 +54,4 @@ class Item(Base):
     )
 
     owner: Mapped["User"] = relationship(back_populates="items")
+    item_list: Mapped["ItemList"] = relationship(back_populates="items")
