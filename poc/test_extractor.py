@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 from poc.extractor import (
     PRICE_REGEX,
     _clean_price_string,
+    _extract_description,
     _extract_images,
     _extract_price,
     _extract_price_jsonld,
@@ -376,6 +377,32 @@ def test_image_upgrade() -> None:
           "https://scrapeme.live/wp-content/uploads/001.png")
 
 
+def test_description() -> None:
+    print("\n[descripcion: Amazon vs og/meta]")
+    # Amazon: viñetas de #feature-bullets + parrafo de #productDescription.
+    amazon_html = page(
+        '<div id="feature-bullets"><ul>'
+        '<li><span class="a-list-item">HD Rumble 2</span></li>'
+        '<li><span class="a-list-item">Controles de movimiento</span></li>'
+        '<li class="aok-hidden"><span class="a-list-item">basura legal oculta</span></li>'
+        "</ul></div>"
+        '<div id="productDescription"><p>Lleva tus juegos al siguiente nivel.</p></div>',
+        head='<meta property="og:description" content="blurb generico de amazon">',
+    )
+    desc = _extract_description(amazon_html) or ""
+    check("Amazon: incluye las viñetas de 'Sobre este articulo'",
+          "• HD Rumble 2" in desc and "• Controles de movimiento" in desc, True)
+    check("Amazon: incluye 'Descripcion del producto'",
+          "Lleva tus juegos al siguiente nivel." in desc, True)
+    check("Amazon: salta los li aok-hidden", "basura legal" in desc, False)
+    check("Amazon: ignora el og:description generico", "blurb generico" in desc, False)
+    # No-Amazon: cae al og:description.
+    generic = page("<p>hola</p>",
+                   head='<meta property="og:description" content="Descripcion real">')
+    check("no-Amazon: usa og:description", _extract_description(generic), "Descripcion real")
+    check("sin nada: None", _extract_description(page("<p>x</p>")), None)
+
+
 def main() -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -386,6 +413,7 @@ def main() -> int:
     test_upsell_context()
     test_block_detection()
     test_image_upgrade()
+    test_description()
 
     print("\n" + "=" * 50)
     if _failures:

@@ -343,7 +343,42 @@ def _extract_title(soup: BeautifulSoup) -> Optional[str]:
     return None
 
 
+def _extract_amazon_description(soup: BeautifulSoup) -> Optional[str]:
+    """On Amazon, the useful description lives in two DOM sections, not in the
+    generic og/meta blurb: "Sobre este artículo" (#feature-bullets) and
+    "Descripción del producto" (#productDescription). Combine them. These ids are
+    Amazon-specific, so other stores never match and fall back to the meta cascade.
+    """
+    parts: list[str] = []
+
+    feature_bullets = soup.find(id="feature-bullets")
+    if feature_bullets:
+        bullets: list[str] = []
+        for li in feature_bullets.find_all("li"):
+            if "aok-hidden" in (li.get("class") or []):
+                continue  # Amazon hides legal/expander li's
+            span = li.find("span", class_="a-list-item")
+            text = (span or li).get_text(" ", strip=True)
+            if text and text not in bullets:
+                bullets.append(text)
+        if bullets:
+            parts.append("\n".join(f"• {b}" for b in bullets))
+
+    product_description = soup.find(id="productDescription")
+    if product_description:
+        text = product_description.get_text(" ", strip=True)
+        if text:
+            parts.append(text)
+
+    return "\n\n".join(parts) if parts else None
+
+
 def _extract_description(soup: BeautifulSoup) -> Optional[str]:
+    # Amazon's real product info first; otherwise the universal og/meta blurb.
+    amazon = _extract_amazon_description(soup)
+    if amazon:
+        return amazon
+
     for finder in (
         lambda: soup.find("meta", attrs={"property": "og:description"}),
         lambda: soup.find("meta", attrs={"name": "twitter:description"}),

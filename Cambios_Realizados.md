@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-25 — Descripcion de Amazon: "Sobre este articulo" + "Descripcion del producto"
+- **Que se hizo:** En Amazon la descripcion salia del `og:description` generico. Ahora `_extract_description` (poc/extractor.py) intenta primero las secciones reales de Amazon y cae al og/meta si no existen (sin regresion para otras tiendas):
+  - `_extract_amazon_description`: viñetas de `#feature-bullets` (span.a-list-item, saltando li `aok-hidden`) unidas como "• ..." + el parrafo de `#productDescription`, separados por linea en blanco.
+  - Los IDs son propios de Amazon -> otras tiendas caen al fallback og/twitter/meta.
+  - Solo backend: el HTML de Amazon llega por Capa 0 (retry-from-html -> extract_from_html -> _parse_into -> _extract_description).
+  - **Verificado:** tests unitarios (viñetas + parrafo, salta aok-hidden, ignora og generico, fallback no-Amazon). Suite completa pasa.
+  - **Deploy:** backend (Manual Deploy en Render). Sin APK nuevo. Aplica a items nuevos/re-agregados.
+- **Archivos:** poc/extractor.py, poc/test_extractor.py
+
+---
+
 ## 2026-07-21 — Multiples listas con nombre (agrupar productos) — backend
 - **Que se hizo:** El usuario ahora puede tener varias listas con nombre; cada producto pertenece a UNA lista. **Sin borrar la DB** — migracion con backfill.
   - **Migracion 0004_lists** (retrocompatible): crea tabla `lists`, una "Mi lista" por usuario existente, agrega `items.list_id` (FK ON DELETE CASCADE, **nullable** para no romper el codigo desplegado viejo), backfillea cada item a la lista de su dueño, y actualiza el trigger de signup para que cada usuario nuevo nazca con "Mi lista". **Aplicada a prod: 0 items sin list_id, 0 usuarios sin lista.**
