@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-27 — AliExpress: precio desde el parametro pdp_npi de la URL
+- **Que se hizo:** El precio de AliExpress **no esta** en el HTML capturado (lo inyecta un XHR posterior al render), pero **viaja en la URL compartida**: el parametro `pdp_npi` URL-decodifica a `...!<moneda>!<precioLista>!<precioOferta>!...` (ej. `6@dis!USD!981.61!765.56!...`). Verificado: 765.56 coincide con el precio real que el usuario vio en DevTools.
+  - Nuevo `_extract_price_from_url(url)` (poc/extractor.py): `parse_qs` -> `pdp_npi` -> parte por `!`, ancla en el codigo de moneda (3 letras mayus) y toma el precio de **oferta** (i+2), cae al de lista (i+1). Normaliza con `_clean_price_string`. Es especifico de AliExpress por el nombre del parametro -> otras tiendas dan `None`.
+  - Integrado como **fallback** en `_parse_into` (`_extract_price(soup) or _extract_price_from_url(base_url)`): el precio en-pagina siempre gana; la URL solo cubre el hueco. La URL completa con `pdp_npi` llega al backend porque `create_item` guarda `original_url=str(body.url)` y `retry-from-html` lo pasa a `extract_from_html`.
+  - **Verificado:** `test_price_from_url` con las 2 URLs reales del usuario (765.56 y 537.48), sin pdp_npi -> None, no-AliExpress -> None, cae a lista si falta la oferta. Suite completa pasa.
+  - **Deploy:** backend (Manual Deploy en Render). Aplica a items nuevos/re-agregados.
+- **Alcance:** cubre shares que traen `pdp_npi` (los que vienen de busqueda/listado, como comparte el usuario). Shares desde la pagina del producto sin `pdp_npi` seguirian sin precio (requeriria el HTML movil real). En el frontend se revirtio el intento previo de esperar el precio en el WebView (usaba un selector desktop que no aplica al DOM movil; ya no hace falta esperar).
+- **Archivos:** poc/extractor.py, poc/test_extractor.py
+
+---
+
 ## 2026-07-26 — AliExpress: galeria real (imagePathList), sin fotos basura
 - **Que se hizo:** En AliExpress el scraping traia solo 1 foto buena + basura (sellos de licencia/ICP del footer, en el mismo CDN alicdn, que el barrido generico de `<img>` recoge). La galeria real vive en un JSON embebido (`window.runParams` -> `imagePathList`), no en `<img>`.
   - Nuevo `_extract_embedded_gallery` (poc/extractor.py): busca el `<script>` con `imagePathList`, parsea el array con `json.loads` y absolutiza las URLs. Es "Priority 0" en `_extract_images`: cuando hay galeria embebida se usa **solo esa** y se salta el barrido de `<img>` (que metia los sellos). La clave es propia de AliExpress -> otras tiendas no matchean y siguen la cascada normal (sin regresion).

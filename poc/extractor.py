@@ -18,7 +18,7 @@ import json
 import asyncio
 import re
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -716,6 +716,34 @@ def _extract_price(soup: BeautifulSoup) -> Optional[float]:
     return candidates[0][3]
 
 
+def _extract_price_from_url(url: str) -> Optional[float]:
+    """Read the price from an AliExpress deep link's ``pdp_npi`` parameter.
+
+    AliExpress injects its price via a late XHR, so it is absent from the HTML
+    we capture (server tier or WebView). But links shared from a search/listing
+    carry the price in ``pdp_npi``, which URL-decodes to an ``!``-delimited list
+    ``...!<currency>!<listPrice>!<salePrice>!...`` (e.g. ``6@dis!USD!981.61!765.56!...``).
+    We take the sale price — what the page shows — falling back to the list price.
+
+    The parameter is AliExpress-specific, so other stores yield ``None``.
+    """
+    params = parse_qs(urlparse(url).query)
+    npi = params.get("pdp_npi")
+    if not npi:
+        return None
+    parts = npi[0].split("!")
+    for i, token in enumerate(parts):
+        # The currency code (USD/EUR/...) anchors the two prices that follow it.
+        if len(token) == 3 and token.isalpha() and token.isupper():
+            for j in (i + 2, i + 1):  # sale price first, then list price
+                if j < len(parts):
+                    price = _clean_price_string(parts[j])
+                    if price is not None and price > 0:
+                        return price
+            break
+    return None
+
+
 def _parse_into(result: dict, html: str, base_url: str) -> None:
     """Run the cascade over *html* and fill any missing fields in *result*.
 
@@ -740,7 +768,9 @@ def _parse_into(result: dict, html: str, base_url: str) -> None:
             result["images"] = images
 
     if result.get("price") is None:
-        price = _extract_price(soup)
+        # In-page price wins; the URL (AliExpress pdp_npi) only fills the gap
+        # when the price never made it into the captured HTML.
+        price = _extract_price(soup) or _extract_price_from_url(base_url)
         if price is not None:
             result["price"] = price
 

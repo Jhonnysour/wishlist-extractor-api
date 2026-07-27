@@ -20,6 +20,7 @@ from poc.extractor import (
     _extract_description,
     _extract_images,
     _extract_price,
+    _extract_price_from_url,
     _extract_price_jsonld,
     _looks_blocked,
     _upgrade_image_url,
@@ -416,6 +417,31 @@ def test_embedded_gallery() -> None:
           "https://tienda.com/og.jpg")
 
 
+def test_price_from_url() -> None:
+    print("\n[precio: pdp_npi de AliExpress en la URL]")
+    # URLs reales compartidas por el usuario: pdp_npi = ...!USD!<lista>!<oferta>!...
+    # Se toma el precio de OFERTA (coincide con lo que muestra la pagina).
+    u1 = ("https://www.aliexpress.us/item/3256809886341108.html?spm=a2g0n.x"
+          "&pdp_npi=6%40dis%21USD%21981.61%21765.56%21%21%216619.05%215162.19"
+          "%21%40212a6df5%2112000051062250285%21sea%21US%210%21ABX%211%210"
+          "&algo_pvid=0542fae5")
+    check("oferta 765.56 (no la lista 981.61)", _extract_price_from_url(u1), 765.56)
+    u2 = ("https://www.aliexpress.us/item/3256808427526554.html?"
+          "pdp_npi=6%40dis%21USD%211129.13%21537.48%21%21%217598.43%213616.97"
+          "%21%40ac100cf2%2112000045953108485%21sea%21US%210%21ABX%211%210")
+    check("oferta 537.48 (no la lista 1129.13)", _extract_price_from_url(u2), 537.48)
+    # Sin pdp_npi -> None (no inventa precio).
+    check("sin pdp_npi: None",
+          _extract_price_from_url("https://www.aliexpress.us/item/123.html?spm=x"), None)
+    # Otra tienda sin el parametro -> None.
+    check("no-AliExpress: None",
+          _extract_price_from_url("https://scrapeme.live/shop/Bulbasaur/"), None)
+    # Cae a la lista si falta la oferta ("!USD!100.00!!...").
+    check("cae al precio de lista si falta la oferta",
+          _extract_price_from_url("https://x.com/i?pdp_npi=6%40dis%21USD%21100.00%21%21%21"),
+          100.00)
+
+
 def test_description() -> None:
     print("\n[descripcion: Amazon vs og/meta]")
     # Amazon: viñetas de #feature-bullets + parrafo de #productDescription.
@@ -453,6 +479,7 @@ def main() -> int:
     test_block_detection()
     test_image_upgrade()
     test_embedded_gallery()
+    test_price_from_url()
     test_description()
 
     print("\n" + "=" * 50)
