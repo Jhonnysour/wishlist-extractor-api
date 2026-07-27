@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-27 — MercadoLibre: diagnostico + retry-from-html deja de degradar datos
+- **Diagnostico (MercadoLibre no trae precio):** ML responde a todo acceso automatizado con su **muro anti-bot** (`suspicious-traffic-frontend`, ruta `/gz/account-verification`, `loginType: negative_traffic`). Ese muro **igual sirve `og:title` y `og:image`**, asi que el backend extraia titulo + 1 foto y daba el item por `ok` — pero el precio vive detras del muro.
+  - Probado y descartado: fetch estatico, Playwright headless, Playwright **con ventana visible + cookies de la home**, UA movil, UA de Googlebot. Todos reciben el muro. El usuario tambien recibio el muro con `--rendered` desde **IP residencial** -> ML detecta la **automatizacion**, no solo la IP (su Chrome normal si ve la pagina).
+  - **API oficial cerrada:** `api.mercadolibre.com/items/...` -> 403 `PolicyAgent`; search -> 403; multiget -> 401. Desde **abril 2025** ML exige token OAuth de un usuario autenticado para todo.
+  - **Unico camino con opcion real:** el WebView del telefono (navegador real, dispositivo real, IP residencial), mucho mas dificil de detectar que Playwright. **No estaba intentandose** (ver fix del disparador en el frontend).
+- **Fix — `retry-from-html` rellena huecos, nunca degrada:** antes sobreescribia todos los campos con el resultado nuevo. Ahora, como este reintento tambien corre para items **sin precio** (no solo FAILED), un reintento que choque con el mismo muro no puede borrar el titulo/imagenes/descripcion ya guardados: cada campo se conserva si el nuevo viene vacio, y el precio solo se pisa si el nuevo no es `None`.
+- **Verificado:** suite del extractor completa pasa; `endpoints.py` compila.
+- **Archivos:** app/api/endpoints.py
+
+---
+
 ## 2026-07-27 — AliExpress: precio desde el parametro pdp_npi de la URL
 - **Que se hizo:** El precio de AliExpress **no esta** en el HTML capturado (lo inyecta un XHR posterior al render), pero **viaja en la URL compartida**: el parametro `pdp_npi` URL-decodifica a `...!<moneda>!<precioLista>!<precioOferta>!...` (ej. `6@dis!USD!981.61!765.56!...`). Verificado: 765.56 coincide con el precio real que el usuario vio en DevTools.
   - Nuevo `_extract_price_from_url(url)` (poc/extractor.py): `parse_qs` -> `pdp_npi` -> parte por `!`, ancla en el codigo de moneda (3 letras mayus) y toma el precio de **oferta** (i+2), cae al de lista (i+1). Normaliza con `_clean_price_string`. Es especifico de AliExpress por el nombre del parametro -> otras tiendas dan `None`.

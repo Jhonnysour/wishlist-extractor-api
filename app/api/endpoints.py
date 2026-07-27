@@ -360,12 +360,19 @@ async def retry_from_html(
     """
     item = await _get_owned_item(item_id, db, current_user)
     result = extract_from_html(body.html, item.original_url)
-    item.title = result.get("title")
-    item.price = result.get("price")
-    item.images = result.get("images", [])
-    item.description = result.get("description")
-    item.domain_source = result.get("domain_source")
-    item.status = "COMPLETED" if result.get("status") == "ok" else "FAILED"
+    # Fill gaps, never downgrade: this retry now also runs for items the server
+    # completed *without a price* (MercadoLibre's anti-bot wall still yields a
+    # title and an og:image). If the WebView hits that same wall, its thinner
+    # result must not wipe the title/images/description we already had.
+    item.title = result.get("title") or item.title
+    item.price = result.get("price") if result.get("price") is not None else item.price
+    item.images = result.get("images") or item.images
+    item.description = result.get("description") or item.description
+    item.domain_source = result.get("domain_source") or item.domain_source
+    if item.price is not None or item.images:
+        item.status = "COMPLETED" if item.title else "FAILED"
+    else:
+        item.status = "COMPLETED" if result.get("status") == "ok" else "FAILED"
     await db.commit()
     await db.refresh(item)
     return item
