@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-07-27 — MercadoLibre: la pagina real SI se parsea bien (+ filtro de placeholders)
+- **Hallazgo clave:** con el HTML **real** de la pagina de producto (capturado por el usuario desde su Chrome, 672 KB vs los 22 KB del muro), la cascada actual **ya extrae todo correctamente**: `price = 600.6` (US$ 600,60 ✓), titulo, descripcion y 10 imagenes. ML publica el precio en formato estandar — `<meta itemprop="price" content="600.60">` y JSON-LD `offers.price` — que `_extract_price` ya cubre. **No hizo falta ninguna regla especifica de ML.**
+  - Conclusion: el problema de ML era **exclusivamente** de acceso (el muro anti-bot), no de parseo. Todo depende de si el WebView del telefono pasa el muro; el fix del disparador de Capa 0 es lo que le da la oportunidad de intentarlo.
+- **Fix — se descartan las imagenes `data:` URI:** ML sirve el clasico GIF transparente de 1x1 como placeholder de lazy-load y se colaba en la galeria (se veria como una diapositiva en blanco, ademas de engordar la fila). `_is_relevant_image` ahora rechaza cualquier `data:`. Es generico (los lazy-loads son de todas las tiendas), no solo de ML.
+  - **Verificado:** test nuevo del placeholder; sobre el HTML real de ML pasa de 10 imagenes con 1 placeholder a 10 utiles, 0 `data:`. Suite completa pasa.
+- **Nota cosmetica (no tocada):** ML mete el precio en el `og:title`, asi que el titulo queda como "Tablet Apple iPad 11 Chip A16 128gb - US$ 600,6". Se puede renombrar desde la app (PATCH title ya existe).
+- **Archivos:** poc/extractor.py, poc/test_extractor.py
+
+---
+
 ## 2026-07-27 — MercadoLibre: diagnostico + retry-from-html deja de degradar datos
 - **Diagnostico (MercadoLibre no trae precio):** ML responde a todo acceso automatizado con su **muro anti-bot** (`suspicious-traffic-frontend`, ruta `/gz/account-verification`, `loginType: negative_traffic`). Ese muro **igual sirve `og:title` y `og:image`**, asi que el backend extraia titulo + 1 foto y daba el item por `ok` — pero el precio vive detras del muro.
   - Probado y descartado: fetch estatico, Playwright headless, Playwright **con ventana visible + cookies de la home**, UA movil, UA de Googlebot. Todos reciben el muro. El usuario tambien recibio el muro con `--rendered` desde **IP residencial** -> ML detecta la **automatizacion**, no solo la IP (su Chrome normal si ve la pagina).

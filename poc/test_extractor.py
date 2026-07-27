@@ -407,6 +407,15 @@ def test_embedded_gallery() -> None:
     )
     check("AliExpress: absolutiza //-urls",
           _extract_images(ali_rel, base), ["https://ae01.alicdn.com/kf/rel.jpg"])
+    # Los data: URI son placeholders de lazy-load (MercadoLibre sirve el GIF
+    # transparente de 1x1), no fotos: se descartan.
+    lazy = page(
+        '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">'
+        '<img src="https://http2.mlstatic.com/D_NQ_NP_907449-MLV1016.webp">'
+    )
+    check("descarta el placeholder data: URI",
+          _extract_images(lazy, "https://articulo.mercadolibre.com.ve/MLV-1_JM"),
+          ["https://http2.mlstatic.com/D_NQ_NP_907449-MLV1016.webp"])
     # Sin imagePathList: cae al barrido normal (og/img), sin regresion.
     normal = page(
         '<img src="https://tienda.com/foto.jpg">',

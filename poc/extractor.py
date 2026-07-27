@@ -251,6 +251,11 @@ def _is_relevant_image(src: str) -> bool:
     if not src or not isinstance(src, str):
         return False
     lower = src.lower()
+    # Inline data: URIs are lazy-load placeholders, not photos — MercadoLibre
+    # serves the classic 1x1 transparent GIF, which the app would render as a
+    # blank slide in the gallery (and it would bloat the row to store).
+    if lower.startswith("data:"):
+        return False
     if any(kw in lower for kw in EXCLUDE_IMG_KEYWORDS):
         return False
     # On Amazon, product photos live under /images/I/; everything else on the
