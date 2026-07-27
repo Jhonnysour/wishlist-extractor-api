@@ -21,6 +21,7 @@ from poc.extractor import (
     _extract_images,
     _extract_price,
     _extract_price_from_url,
+    _title_from_url,
     _extract_price_jsonld,
     _looks_blocked,
     _upgrade_image_url,
@@ -451,6 +452,31 @@ def test_price_from_url() -> None:
           100.00)
 
 
+def test_title_from_url() -> None:
+    print("\n[titulo desde el slug de la URL (ultimo recurso)]")
+    # URLs reales de MercadoLibre: el muro anti-bot no da titulo util
+    # ("Mercado Libre"), pero el slug si nombra el producto.
+    check("MercadoLibre: iPad",
+          _title_from_url("https://articulo.mercadolibre.com.ve/"
+                          "MLV-876716902-tablet-apple-ipad-11-chip-a16-128gb-_JM"
+                          "?variation=194334521643"),
+          "Tablet Apple Ipad 11 Chip A16 128gb")
+    check("MercadoLibre: Xiaomi (con # y query)",
+          _title_from_url("https://articulo.mercadolibre.com.ve/"
+                          "MLV-1012598296-tablet-xiaomi-redmi-pad-2-pro-256gb-8gb-ram-121-25k-wifi-6-_JM"
+                          "?searchVariation=202572998269#polycard_client=search"),
+          "Tablet Xiaomi Redmi Pad 2 Pro 256gb 8gb Ram 121 25k Wifi 6")
+    check("quita la extension .html",
+          _title_from_url("https://tienda.com/p/zapatos-de-cuero-negros.html"),
+          "Zapatos De Cuero Negros")
+    # No inventar titulos donde el slug no nombra nada.
+    check("slug de una sola palabra: None",
+          _title_from_url("https://scrapeme.live/shop/Bulbasaur/"), None)
+    check("slug de puros numeros: None",
+          _title_from_url("https://tienda.com/p/1234-5678-9012"), None)
+    check("sin path: None", _title_from_url("https://tienda.com"), None)
+
+
 def test_description() -> None:
     print("\n[descripcion: Amazon vs og/meta]")
     # Amazon: viñetas de #feature-bullets + parrafo de #productDescription.
@@ -489,6 +515,7 @@ def main() -> int:
     test_image_upgrade()
     test_embedded_gallery()
     test_price_from_url()
+    test_title_from_url()
     test_description()
 
     print("\n" + "=" * 50)

@@ -18,7 +18,7 @@ import json
 import asyncio
 import re
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -721,6 +721,40 @@ def _extract_price(soup: BeautifulSoup) -> Optional[float]:
     return candidates[0][3]
 
 
+# MercadoLibre item URLs are "MLV-876716902-tablet-apple-ipad-11-...-_JM":
+# a site+id prefix, the product name, and a "_JM" marker.
+_URL_ITEM_ID_PREFIX_RE = re.compile(r"^ML[A-Z]-?\d+-", re.IGNORECASE)
+_URL_ITEM_SUFFIX_RE = re.compile(r"-?_JM$", re.IGNORECASE)
+_URL_PAGE_EXT_RE = re.compile(r"\.(html?|php|aspx?)$", re.IGNORECASE)
+
+
+def _title_from_url(url: str) -> Optional[str]:
+    """Derive a product name from the URL slug.
+
+    Used only when a page told us nothing: stores that wall off scrapers serve
+    a verification page whose <title> is just the store name, which leaves the
+    user staring at an item they can't identify. The slug does name the product
+    ("...-tablet-apple-ipad-11-chip-a16-128gb-_JM"), so it is a far better
+    starting point for them to confirm.
+
+    Returns ``None`` for slugs that don't read like a name — ids, single words —
+    rather than inventing a title out of a random path.
+    """
+    path = urlparse(url).path.rstrip("/")
+    if not path:
+        return None
+    slug = _URL_PAGE_EXT_RE.sub("", path.rsplit("/", 1)[-1])
+    slug = _URL_ITEM_SUFFIX_RE.sub("", _URL_ITEM_ID_PREFIX_RE.sub("", slug))
+    words = [w for w in re.split(r"[-_+]+", unquote(slug)) if w]
+    if len(words) < 3:
+        return None
+    joined = "".join(words)
+    # Reject id-like slugs ("p-1234-5678-9012"): a name is mostly letters.
+    if sum(c.isalpha() for c in joined) * 2 < len(joined):
+        return None
+    return " ".join(w[:1].upper() + w[1:] for w in words)[:255]
+
+
 def _extract_price_from_url(url: str) -> Optional[float]:
     """Read the price from an AliExpress deep link's ``pdp_npi`` parameter.
 
@@ -778,6 +812,16 @@ def _parse_into(result: dict, html: str, base_url: str) -> None:
         price = _extract_price(soup) or _extract_price_from_url(base_url)
         if price is not None:
             result["price"] = price
+
+    # A page that yielded neither a price nor an image told us nothing about the
+    # product — it's a verification wall or an error page, and its <title> is
+    # the store's name ("Mercado Libre"), which leaves the user with an item
+    # they cannot identify. The URL slug names the product, so it makes a much
+    # better title to hand them for confirmation.
+    if result.get("price") is None and not result.get("images"):
+        slug_title = _title_from_url(base_url)
+        if slug_title:
+            result["title"] = slug_title
 
 
 def _needs_render(result: dict) -> bool:

@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-07-27 — MercadoLibre: CONFIRMADO que bloquea al telefono + titulo desde el slug de la URL
+- **Diagnostico definitivo (ya no es hipotesis):** con el diagnostico que ahora reporta la app, la captura del telefono devolvio `capturado 22 KB, sin datos` desde `https://www.mercadolibre.com.ve/gz/account-verification?go=...`. Es decir: **el WebView SI captura**, pero ML lo **redirige a su muro de verificacion**, que no trae ni titulo de producto ni fotos. Un navegador nuevo (sin cookies ni historial) lo clasifica como trafico sospechoso. ML no es alcanzable por scraping desde la app.
+- **Fix — `_title_from_url`:** cuando una pagina no dio **ni precio ni imagenes** (muro/error), su `<title>` suele ser solo el nombre de la tienda ("Mercado Libre") y el item quedaba imposible de identificar. Ahora se deriva el nombre del **slug de la URL**, que si nombra el producto:
+  - `MLV-876716902-tablet-apple-ipad-11-chip-a16-128gb-_JM` -> "Tablet Apple Ipad 11 Chip A16 128gb".
+  - Quita el prefijo `ML<sitio>-<id>-`, el sufijo `_JM` y la extension (.html/.php/...), separa por `-`/`_`/`+`, `unquote` para los `%20`, y capitaliza.
+  - **No inventa titulos:** devuelve `None` si el slug no parece un nombre (menos de 3 palabras, o mas de la mitad no son letras — ids tipo `p-1234-5678`).
+  - Se aplica **solo como ultimo recurso**, dentro de `_parse_into`, cuando no hay precio ni imagenes.
+  - **Efecto:** el item ya no queda anonimo. Al tocar "Completar a mano" el dialogo abre con el nombre del producto ya escrito; guardar lo pasa a COMPLETED y luego se le pone el precio.
+  - **Verificado:** tests con las 2 URLs reales del usuario, extension .html, y los casos que deben dar `None` (una palabra, puros numeros, sin path). Suite completa pasa. Probado extremo a extremo con un muro simulado: `title` = el producto, `status` = no_data.
+- **Archivos:** poc/extractor.py, poc/test_extractor.py
+
+---
+
 ## 2026-07-27 — Precio manual y rescate de items FAILED
 - **Por que:** MercadoLibre bloquea a los scrapers de forma definitiva (muro anti-bot + API con OAuth). Un item que falla quedaba como una **tarjeta roja muerta**: sin titulo, sin precio y sin forma de arreglarlo desde la app. Ahora el usuario puede completarlo a mano — sirve para ML y para cualquier tienda que falle.
   - `app/schemas/item.py`: `ItemUpdate.price: Optional[float]` con `ge=0`. Mandarlo explicitamente como `null` **borra** el precio; no mandarlo lo deja igual (por eso el endpoint lee `model_dump(exclude_unset=True)`, que distingue "no enviado" de "enviado como null").
