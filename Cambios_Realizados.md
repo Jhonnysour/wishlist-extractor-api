@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-07-27 — Precio manual y rescate de items FAILED
+- **Por que:** MercadoLibre bloquea a los scrapers de forma definitiva (muro anti-bot + API con OAuth). Un item que falla quedaba como una **tarjeta roja muerta**: sin titulo, sin precio y sin forma de arreglarlo desde la app. Ahora el usuario puede completarlo a mano — sirve para ML y para cualquier tienda que falle.
+  - `app/schemas/item.py`: `ItemUpdate.price: Optional[float]` con `ge=0`. Mandarlo explicitamente como `null` **borra** el precio; no mandarlo lo deja igual (por eso el endpoint lee `model_dump(exclude_unset=True)`, que distingue "no enviado" de "enviado como null").
+  - `app/api/endpoints.py` (`update_item`): aplica `price`, y **rescate** — si tras los cambios el item sigue `FAILED` pero ya tiene titulo, pasa a `COMPLETED` (si el usuario lo nombro, es utilizable).
+  - **Verificado:** el schema distingue los tres casos (valor / null explicito / no enviado) y rechaza negativos; `endpoints.py` compila; suite del extractor pasa.
+- **Archivos:** app/schemas/item.py, app/api/endpoints.py
+
+---
+
 ## 2026-07-27 — MercadoLibre: la pagina real SI se parsea bien (+ filtro de placeholders)
 - **Hallazgo clave:** con el HTML **real** de la pagina de producto (capturado por el usuario desde su Chrome, 672 KB vs los 22 KB del muro), la cascada actual **ya extrae todo correctamente**: `price = 600.6` (US$ 600,60 ✓), titulo, descripcion y 10 imagenes. ML publica el precio en formato estandar — `<meta itemprop="price" content="600.60">` y JSON-LD `offers.price` — que `_extract_price` ya cubre. **No hizo falta ninguna regla especifica de ML.**
   - Conclusion: el problema de ML era **exclusivamente** de acceso (el muro anti-bot), no de parseo. Todo depende de si el WebView del telefono pasa el muro; el fix del disparador de Capa 0 es lo que le da la oportunidad de intentarlo.

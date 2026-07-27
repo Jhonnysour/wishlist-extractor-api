@@ -308,12 +308,17 @@ async def update_item(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Item:
-    """Update an item: toggle ``purchased`` and/or curate its ``images``."""
+    """Update an item: toggle ``purchased``, curate ``images``, rename it or
+    type in a ``price`` the scrapers couldn't reach."""
     item = await _get_owned_item(item_id, db, current_user)
     data = body.model_dump(exclude_unset=True)
 
     if "purchased" in data:
         item.purchased = data["purchased"]
+
+    if "price" in data:
+        # Explicit null clears it; the schema already rejects negatives.
+        item.price = data["price"]
 
     if "title" in data:
         title = (data["title"] or "").strip()
@@ -336,6 +341,13 @@ async def update_item(
                 detail="Las imágenes deben ser un subconjunto de las actuales.",
             )
         item.images = new_images
+
+    # Manual rescue: a FAILED item is a dead red card in the app — no title, no
+    # price, nothing to act on. Some stores (MercadoLibre) wall off scrapers for
+    # good, so once the user names it themselves the item is usable and should
+    # stop being reported as a failure.
+    if item.status == "FAILED" and item.title:
+        item.status = "COMPLETED"
 
     await db.commit()
     await db.refresh(item)
