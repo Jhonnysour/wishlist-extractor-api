@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-07-26 — AliExpress: galeria real (imagePathList), sin fotos basura
+- **Que se hizo:** En AliExpress el scraping traia solo 1 foto buena + basura (sellos de licencia/ICP del footer, en el mismo CDN alicdn, que el barrido generico de `<img>` recoge). La galeria real vive en un JSON embebido (`window.runParams` -> `imagePathList`), no en `<img>`.
+  - Nuevo `_extract_embedded_gallery` (poc/extractor.py): busca el `<script>` con `imagePathList`, parsea el array con `json.loads` y absolutiza las URLs. Es "Priority 0" en `_extract_images`: cuando hay galeria embebida se usa **solo esa** y se salta el barrido de `<img>` (que metia los sellos). La clave es propia de AliExpress -> otras tiendas no matchean y siguen la cascada normal (sin regresion).
+  - **Verificado:** tests unitarios (usa imagePathList, excluye sellos del footer, absolutiza //-urls, no-AliExpress sigue con og). Ademas validado contra el `ali.html` real capturado por el usuario (VPN off): devuelve las 6 fotos del producto, 0 basura.
+  - **Deploy:** backend (Manual Deploy en Render). Sin APK nuevo (el HTML llega por Capa 0). Aplica a items nuevos/re-agregados.
+- **Precio (NO resuelto, diagnostico):** el precio **no esta** en el HTML capturado — AliExpress lo inyecta por un XHR posterior al render. En `ali.html` no hay `price-default`, ni modulo de precio, ni meta de precio; los unicos "currency" son JS leyendo cookies. No hay nada que parsear del HTML. El fix real del precio requiere que la **Capa 0 (WebView del telefono) espere al elemento de precio antes de capturar** (cambio de frontend), pendiente de decidir.
+- **Herramienta:** `poc/debug_price.py` gano `--dump-html <archivo>` para volcar el HTML obtenido (asi el usuario, con IP residencial, captura la pagina real y Claude la analiza).
+- **Archivos:** poc/extractor.py, poc/test_extractor.py, poc/debug_price.py
+
+---
+
 ## 2026-07-25 — Descripcion de Amazon: "Sobre este articulo" + "Descripcion del producto"
 - **Que se hizo:** En Amazon la descripcion salia del `og:description` generico. Ahora `_extract_description` (poc/extractor.py) intenta primero las secciones reales de Amazon y cae al og/meta si no existen (sin regresion para otras tiendas):
   - `_extract_amazon_description`: viñetas de `#feature-bullets` (span.a-list-item, saltando li `aok-hidden`) unidas como "• ..." + el parrafo de `#productDescription`, separados por linea en blanco.

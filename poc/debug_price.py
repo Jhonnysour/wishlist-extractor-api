@@ -4,6 +4,7 @@ Diagnostico de precio para UNA url — dice de donde sale el precio y por que.
     python -m poc.debug_price <url>
     python -m poc.debug_price <url> --expect 499      # busca donde vive el precio real
     python -m poc.debug_price <url> --rendered        # fuerza el tier headless
+    python -m poc.debug_price <url> --rendered --dump-html out.html  # vuelca el HTML a un archivo
 
 Existe porque el desarrollo de este scraper se hace a veces desde una IP
 (VPN) a la que el sitio le sirve una pagina distinta — otra tienda, otra
@@ -163,6 +164,12 @@ async def main() -> None:
     if force_render:
         args.remove("--rendered")
 
+    dump_path = None
+    if "--dump-html" in args:
+        i = args.index("--dump-html")
+        dump_path = args[i + 1]
+        del args[i:i + 2]
+
     url = args[0]
 
     try:
@@ -182,6 +189,10 @@ async def main() -> None:
             return
 
         print(f"tier={tier}  len={len(html)}  blocked={blocked}")
+        if dump_path:
+            with open(dump_path, "w", encoding="utf-8") as fh:
+                fh.write(html)
+            print(f"[HTML volcado a {dump_path}]")
         analyse(html, expect)
     finally:
         await browser_manager.stop()

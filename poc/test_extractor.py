@@ -377,6 +377,45 @@ def test_image_upgrade() -> None:
           "https://scrapeme.live/wp-content/uploads/001.png")
 
 
+def test_embedded_gallery() -> None:
+    print("\n[imagenes: galeria embebida de AliExpress]")
+    # AliExpress: la galeria real vive en window.runParams como imagePathList;
+    # las fotos <img> visibles son la principal + sellos del footer (basura).
+    base = "https://www.aliexpress.us/item/3256809886341108.html"
+    ali_html = page(
+        '<img src="https://ae01.alicdn.com/kf/main-visible.jpg">'
+        '<footer>'
+        '<img src="https://ae01.alicdn.com/kf/business-license-seal.png">'
+        '<img src="https://ae01.alicdn.com/kf/icp-gov-badge.png">'
+        "</footer>"
+        "<script>window.runParams = {\"data\":{\"imageOptimize\":true,"
+        "\"imagePathList\":[\"https://ae01.alicdn.com/kf/A1.jpg\","
+        "\"https://ae01.alicdn.com/kf/A2.jpg\","
+        "\"https://ae01.alicdn.com/kf/A3.jpg\"]}};</script>"
+    )
+    images = _extract_images(ali_html, base)
+    check("AliExpress: usa imagePathList como galeria",
+          images, ["https://ae01.alicdn.com/kf/A1.jpg",
+                   "https://ae01.alicdn.com/kf/A2.jpg",
+                   "https://ae01.alicdn.com/kf/A3.jpg"])
+    check("AliExpress: excluye los sellos del footer",
+          any("seal" in u or "badge" in u for u in images), False)
+    # URLs protocol-relative se absolutizan con el esquema del base_url.
+    ali_rel = page(
+        "<script>x={\"imagePathList\":[\"//ae01.alicdn.com/kf/rel.jpg\"]}</script>"
+    )
+    check("AliExpress: absolutiza //-urls",
+          _extract_images(ali_rel, base), ["https://ae01.alicdn.com/kf/rel.jpg"])
+    # Sin imagePathList: cae al barrido normal (og/img), sin regresion.
+    normal = page(
+        '<img src="https://tienda.com/foto.jpg">',
+        head='<meta property="og:image" content="https://tienda.com/og.jpg">',
+    )
+    check("no-AliExpress: sigue la cascada normal (og primero)",
+          _extract_images(normal, "https://tienda.com/p")[0],
+          "https://tienda.com/og.jpg")
+
+
 def test_description() -> None:
     print("\n[descripcion: Amazon vs og/meta]")
     # Amazon: viñetas de #feature-bullets + parrafo de #productDescription.
@@ -413,6 +452,7 @@ def main() -> int:
     test_upsell_context()
     test_block_detection()
     test_image_upgrade()
+    test_embedded_gallery()
     test_description()
 
     print("\n" + "=" * 50)

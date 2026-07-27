@@ -411,9 +411,56 @@ def _upgrade_image_url(url: str) -> str:
     return _AMAZON_IMG_SIZE_RE.sub(r"\1\2", url)
 
 
+# AliExpress serves its product gallery not as <img> tags but inside an
+# embedded JSON blob (window.runParams) under "imagePathList". The generic <img>
+# sweep misses those and instead scoops footer badges (business-license / ICP
+# seals hosted on the same alicdn CDN), so the app showed one real photo plus
+# junk. Pulling imagePathList yields the true gallery; the key is
+# AliExpress-specific, so other stores never match and fall back to the cascade.
+_IMAGE_PATH_LIST_RE = re.compile(r'"imagePathList"\s*:\s*(\[[^\]]*\])')
+
+
+def _extract_embedded_gallery(soup: BeautifulSoup, base_url: str) -> list[str]:
+    """Return the product gallery from a page's embedded JSON, if any.
+
+    Currently handles AliExpress's ``imagePathList``. Returns [] when the page
+    carries no such blob, leaving every other store to the normal cascade.
+    """
+    for script in soup.find_all("script"):
+        text = script.string or script.get_text()
+        if not text or "imagePathList" not in text:
+            continue
+        match = _IMAGE_PATH_LIST_RE.search(text)
+        if not match:
+            continue
+        try:
+            urls = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        gallery: list[str] = []
+        seen: set[str] = set()
+        for u in urls:
+            if not isinstance(u, str) or not u.strip():
+                continue
+            full = _absolutize_url(u.strip(), base_url)
+            if full not in seen:
+                gallery.append(full)
+                seen.add(full)
+        if gallery:
+            return gallery[:MAX_IMAGES]
+    return []
+
+
 def _extract_images(soup: BeautifulSoup, base_url: str) -> list[str]:
     images: list[str] = []
     seen: set[str] = set()
+
+    # Priority 0: an embedded gallery (e.g. AliExpress imagePathList) is the
+    # authoritative photo set. When present, trust it alone — the generic <img>
+    # sweep below would otherwise scoop unrelated footer badges alongside it.
+    embedded = _extract_embedded_gallery(soup, base_url)
+    if embedded:
+        return embedded
 
     # Priority 1: Open Graph
     for meta in soup.find_all("meta", attrs={"property": "og:image"}):
